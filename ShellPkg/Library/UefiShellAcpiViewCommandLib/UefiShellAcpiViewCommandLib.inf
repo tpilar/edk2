@@ -19,6 +19,8 @@
   DESTRUCTOR                     = UefiShellAcpiViewCommandLibDestructor
 
 [Sources.common]
+  AcpiCrossValidator.c
+  AcpiCrossValidator.h
   AcpiParser.c
   AcpiParser.h
   AcpiTableParser.c
