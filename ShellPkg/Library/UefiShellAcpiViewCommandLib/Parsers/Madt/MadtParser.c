@@ -13,6 +13,8 @@
 
 #include <IndustryStandard/Acpi.h>
 #include <Library/UefiLib.h>
+#include <Library/BaseLib.h>
+#include "AcpiCrossValidator.h"
 #include "AcpiParser.h"
 #include "AcpiTableParser.h"
 #include "AcpiViewConfig.h"
@@ -285,6 +287,111 @@ STATIC ACPI_STRUCT_DATABASE MadtDatabase = {
 };
 
 /**
+  ACPI Processor UID comparator.
+
+  @param[in] Uid1   The first UID.
+  @param[in] Uid2   The second UID.
+
+  @retval 0     Uid1 and Uid2 are equal.
+  @retval -1    Uid1 and Uid2 are different.
+**/
+INTN
+EFIAPI
+AcpiProcUidCompare (
+  CONST VOID *Uid1,
+  CONST VOID *Uid2
+  )
+{
+  if (*(UINT32*)Uid1 == *(UINT32*)Uid2) {
+    return 0;
+  } else {
+    return -1;
+  }
+}
+
+/**
+  Validate that all ACPI Processor UIDs found in GIC CPU (GICC) structures
+  are unique across the entire MADT table.
+
+  This method assumes that there has already been a successful pass through
+  the table. Consequently, many security checks are skipped.
+
+  @param [in] Ptr             Pointer to the MADT table
+  @param [in] Length          Length of the MADT table in bytes.
+  @param [in] StructOffset    Offset from the start of MADT to the list of
+                              Interrupt Controller Structures.
+  @param [in] FieldOffset     Offset of field in MADT Interrupt Controller struct
+                              that is to be checked for uniqueness.
+  @param [in] FieldSize       Size of field pointed to by FieldOffset.
+  @param [in] StructMeta      Structure with metadata (type, name) concerning
+                              the struct that contains the field pointed to by
+                              FieldOffset.
+
+  @retval EFI_SUCCESS             All ACPI Processor UIDs are unique.
+  @retval EFI_INVALID_PARAMETER   One or more duplicate ACPI Processor UIDs.
+  @retval EFI_OUT_OF_RESOURCES    Memory allocation failed.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+ValidateAcpiProcUidsUnique (
+  IN UINT8              *Ptr,
+  IN UINT32             Length,
+  IN UINT32             StructOffset,
+  IN UINTN              FieldOffset,
+  IN UINTN              FieldSize,
+  IN CONST EFI_STRING   FieldName,
+  IN ACPI_STRUCT_INFO   *StructMeta
+  )
+{
+  BOOLEAN               AllUnique;
+  LIST_ENTRY            UniqueList;
+
+  InitializeListHead(&UniqueList);
+
+  // Parse the MADT table body in search of GICC structures
+  while (StructOffset < Length) {
+
+    // Parse Interrupt Controller Structure to obtain its Length.
+    ParseAcpi (
+      FALSE,
+      0,
+      NULL,
+      Ptr + StructOffset,
+      Length - StructOffset,
+      PARSER_PARAMS (MadtInterruptControllerHeaderParser)
+      );
+
+    // If the currently parsed structure is of GICC type, and is big enough
+    // to expose the ACPI Processor UID field, add the field value to the
+    // Validator buffer.
+    if ((*MadtInterruptControllerType == StructMeta->Type) &&
+        (*MadtInterruptControllerLength > (FieldOffset + FieldSize))
+        ) {
+      AcpiCrossValidatorAdd (
+        &UniqueList,
+        Ptr + StructOffset + FieldOffset,
+        FieldSize,
+        StructMeta->Type,
+        StructOffset + FieldOffset
+        );
+    }
+
+    StructOffset += *MadtInterruptControllerLength;
+  } // while
+
+  AllUnique = AcpiCrossValidatorAllUnique (
+    &UniqueList,
+    AcpiProcUidCompare,
+    StructMeta->Name,
+    FieldName
+    );
+
+  AcpiCrossValidatorDelete (&UniqueList);
+  return AllUnique ? EFI_SUCCESS : EFI_INVALID_PARAMETER;
+}
+
+/**
   This function parses the ACPI MADT table.
   When trace is enabled this function parses the MADT table and
   traces the ACPI table fields.
@@ -314,6 +421,7 @@ ParseAcpiMadt (
   )
 {
   UINT32 Offset;
+  UINT32 MadtBodyOffset;
 
   if (!Trace) {
     return;
@@ -329,6 +437,8 @@ ParseAcpiMadt (
              AcpiTableLength,
              PARSER_PARAMS (MadtParser)
              );
+
+  MadtBodyOffset = Offset;
 
   while (Offset < AcpiTableLength) {
     // Parse Interrupt Controller Structure to obtain Length.
@@ -371,6 +481,16 @@ ParseAcpiMadt (
   // Report and validate Interrupt Controller Structure counts
   if (mConfig.ConsistencyCheck) {
     ValidateAcpiStructCounts (&MadtDatabase);
+
+    ValidateAcpiProcUidsUnique (
+      Ptr,
+      AcpiTableLength,
+      MadtBodyOffset,
+      FIELD_SIZE_OF (EFI_ACPI_6_3_GIC_STRUCTURE, AcpiProcessorUid),
+      OFFSET_OF (EFI_ACPI_6_3_GIC_STRUCTURE, AcpiProcessorUid),
+      L"ACPI Processor UID",
+      &MadtStructs[EFI_ACPI_6_3_GIC]
+    );
 
     if (MadtStructs[EFI_ACPI_6_3_GICD].Count > 1) {
       AcpiError (
