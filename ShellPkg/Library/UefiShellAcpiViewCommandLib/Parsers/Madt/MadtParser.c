@@ -502,6 +502,16 @@ ParseAcpiMadt (
       &MadtStructs[EFI_ACPI_6_3_GIC_ITS]
     );
 
+    ValidateFieldUnique (
+      Ptr,
+      AcpiTableLength,
+      MadtBodyOffset,
+      FIELD_SIZE_OF (EFI_ACPI_6_3_GIC_MSI_FRAME_STRUCTURE, GicMsiFrameId),
+      OFFSET_OF (EFI_ACPI_6_3_GIC_MSI_FRAME_STRUCTURE, GicMsiFrameId),
+      L"GIC MSI Frame ID",
+      &MadtStructs[EFI_ACPI_6_3_GIC_MSI_FRAME]
+    );
+
     if (MadtStructs[EFI_ACPI_6_3_GICD].Count > 1) {
       AcpiError (
         ACPI_ERROR_CROSS,
