@@ -10,6 +10,7 @@
 
 #include <IndustryStandard/Acpi.h>
 #include "AcpiParser.h"
+#include "AcpiCrossValidator.h"
 #include "AcpiTableParser.h"
 #include "AcpiViewConfig.h"
 #include "AcpiViewLog.h"
@@ -155,6 +156,94 @@ STATIC CONST ACPI_PARSER SBSAGenericWatchdogParser[] = {
 };
 
 /**
+  GT Frame Number comparator.
+
+  @param[in] Frame1   The first GT Frame Number.
+  @param[in] Frame2   The second GT Frame Number.
+
+  @retval 0     Frame1 and Frame2 are equal.
+  @retval -1    Frame1 and Frame2 are different.
+**/
+INTN
+EFIAPI
+GtFrameNumberCompare (
+  CONST VOID *Frame1,
+  CONST VOID *Frame2
+  )
+{
+  if (*(UINT8*)Frame1 == *(UINT8*)Frame2) {
+    return 0;
+  } else {
+    return -1;
+  }
+}
+
+/**
+  Validate that all GT Frame Numbers found in GT Block Timer structures
+  are unique across the entire GT Block.
+
+  @param [in] Ptr                 Pointer to the GTDT table.
+  @param [in] Length              Length in bytes to scan, starting from Offset into Ptr.
+  @param [in] Offset              Offset from the start of GT Block to the list
+                                  of GT Block Timers.
+  @param [in] Count               Number of GT Block Timers in this block.
+
+  @retval EFI_SUCCESS             All GT Frame Numbers are unique.
+  @retval EFI_INVALID_PARAMETER   One or more duplicate GT Frame Numbers.
+  @retval EFI_OUT_OF_RESOURCES    Memory allocation failed.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+ValidateGtFrameNumbersUnique (
+  IN UINT8*            Ptr,
+  IN UINT16            Length,
+  IN UINT16            Offset,
+  IN UINT32            Count,
+  IN UINTN             FieldOffset,
+  IN UINTN             FieldSize
+  )
+{
+  BOOLEAN               AllUnique;
+  LIST_ENTRY            UniqueList;
+
+  InitializeListHead(&UniqueList);
+
+  while ((Count-- > 0) && (Offset < Length)) {
+    AcpiCrossValidatorAdd (
+      &UniqueList,
+      Ptr + Offset + FieldOffset,
+      FieldSize,
+      EFI_ACPI_6_3_GTDT_GT_BLOCK,
+      Offset + FieldOffset
+      );
+
+    Offset += sizeof (EFI_ACPI_6_3_GTDT_GT_BLOCK_TIMER_STRUCTURE);
+  }
+
+  AllUnique = AcpiCrossValidatorAllUnique (
+                &UniqueList,
+                GtFrameNumberCompare,
+                "GT Block Timer",
+                L"GT Frame Number"
+                );
+
+  AcpiCrossValidatorDelete (&UniqueList);
+  return AllUnique ? EFI_SUCCESS : EFI_INVALID_PARAMETER;
+}
+
+/**
+  Common signature for Platform Timer Structure parsers.
+
+  @param [in] Ptr     Pointer to the start of the Platform Timer data.
+  @param [in] Length  Length of the Platform Timer structure.
+*/
+typedef VOID (*PLATFORM_TIMER_PARSER) (
+  IN UINT8* Ptr,
+  IN UINT16 Length
+  );
+
+/**
   This function parses the Platform GT Block.
 
   @param [in] Ptr         Pointer to the start of structure's buffer.
@@ -204,6 +293,18 @@ DumpGTBlock (
                 PARSER_PARAMS (GtBlockTimerParser)
                 );
     Index++;
+  }
+
+  if (mConfig.ConsistencyCheck)  {
+    ValidateGtFrameNumbersUnique (
+      Ptr,
+      Length,
+      *GtBlockTimerOffset,
+      *GtBlockTimerCount,
+      OFFSET_OF (EFI_ACPI_6_3_GTDT_GT_BLOCK_TIMER_STRUCTURE, GTFrameNumber),
+      FIELD_SIZE_OF (
+        EFI_ACPI_6_3_GTDT_GT_BLOCK_TIMER_STRUCTURE, GTFrameNumber)
+      );
   }
 }
 
