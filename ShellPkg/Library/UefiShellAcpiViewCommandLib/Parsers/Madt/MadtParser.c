@@ -287,22 +287,22 @@ STATIC ACPI_STRUCT_DATABASE MadtDatabase = {
 };
 
 /**
-  ACPI Processor UID comparator.
+  ACPI Processor UID and GIC ITS ID comparator.
 
-  @param[in] Uid1   The first UID.
-  @param[in] Uid2   The second UID.
+  @param[in] Id1   The first ID.
+  @param[in] Id2   The second ID.
 
-  @retval 0     Uid1 and Uid2 are equal.
-  @retval -1    Uid1 and Uid2 are different.
+  @retval 0     Id1 and Id2 are equal.
+  @retval -1    Id1 and Id2 are different.
 **/
 INTN
 EFIAPI
-AcpiProcUidCompare (
-  CONST VOID *Uid1,
-  CONST VOID *Uid2
+GicIdCompare (
+  CONST VOID *Id1,
+  CONST VOID *Id2
   )
 {
-  if (*(UINT32*)Uid1 == *(UINT32*)Uid2) {
+  if (*(UINT32*)Id1 == *(UINT32*)Id2) {
     return 0;
   } else {
     return -1;
@@ -310,8 +310,8 @@ AcpiProcUidCompare (
 }
 
 /**
-  Validate that all ACPI Processor UIDs found in GIC CPU (GICC) structures
-  are unique across the entire MADT table.
+  Validate that all instances of a given field in a given controller
+  type structure are unique across the entire MADT table.
 
   This method assumes that there has already been a successful pass through
   the table. Consequently, many security checks are skipped.
@@ -327,14 +327,14 @@ AcpiProcUidCompare (
                               the struct that contains the field pointed to by
                               FieldOffset.
 
-  @retval EFI_SUCCESS             All ACPI Processor UIDs are unique.
-  @retval EFI_INVALID_PARAMETER   One or more duplicate ACPI Processor UIDs.
+  @retval EFI_SUCCESS             All instances of the field are unique
+  @retval EFI_INVALID_PARAMETER   One or more duplicate values found.
   @retval EFI_OUT_OF_RESOURCES    Memory allocation failed.
 **/
 STATIC
 EFI_STATUS
 EFIAPI
-ValidateAcpiProcUidsUnique (
+ValidateFieldUnique (
   IN UINT8              *Ptr,
   IN UINT32             Length,
   IN UINT32             StructOffset,
@@ -362,9 +362,9 @@ ValidateAcpiProcUidsUnique (
       PARSER_PARAMS (MadtInterruptControllerHeaderParser)
       );
 
-    // If the currently parsed structure is of GICC type, and is big enough
-    // to expose the ACPI Processor UID field, add the field value to the
-    // Validator buffer.
+    // If the currently parsed structure is of correct type, and is big enough
+    // to expose the required field, add the field value to the
+    // unique list buffer.
     if ((*MadtInterruptControllerType == StructMeta->Type) &&
         (*MadtInterruptControllerLength > (FieldOffset + FieldSize))
         ) {
@@ -382,7 +382,7 @@ ValidateAcpiProcUidsUnique (
 
   AllUnique = AcpiCrossValidatorAllUnique (
     &UniqueList,
-    AcpiProcUidCompare,
+    GicIdCompare,
     StructMeta->Name,
     FieldName
     );
@@ -482,7 +482,7 @@ ParseAcpiMadt (
   if (mConfig.ConsistencyCheck) {
     ValidateAcpiStructCounts (&MadtDatabase);
 
-    ValidateAcpiProcUidsUnique (
+    ValidateFieldUnique (
       Ptr,
       AcpiTableLength,
       MadtBodyOffset,
@@ -490,6 +490,16 @@ ParseAcpiMadt (
       OFFSET_OF (EFI_ACPI_6_3_GIC_STRUCTURE, AcpiProcessorUid),
       L"ACPI Processor UID",
       &MadtStructs[EFI_ACPI_6_3_GIC]
+    );
+
+    ValidateFieldUnique (
+      Ptr,
+      AcpiTableLength,
+      MadtBodyOffset,
+      FIELD_SIZE_OF (EFI_ACPI_6_3_GIC_ITS_STRUCTURE, GicItsId),
+      OFFSET_OF (EFI_ACPI_6_3_GIC_ITS_STRUCTURE, GicItsId),
+      L"GIC ITS ID",
+      &MadtStructs[EFI_ACPI_6_3_GIC_ITS]
     );
 
     if (MadtStructs[EFI_ACPI_6_3_GICD].Count > 1) {
