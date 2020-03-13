@@ -11,6 +11,7 @@
 #include <IndustryStandard/IoRemappingTable.h>
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
+#include "AcpiCrossValidator.h"
 #include "AcpiParser.h"
 #include "AcpiTableParser.h"
 #include "AcpiViewConfig.h"
@@ -596,6 +597,145 @@ STATIC ACPI_STRUCT_DATABASE IortDatabase = {
   ARRAY_SIZE (IortStructs)
 };
 
+/*
+  Allowed ID mappings
+ _________________________________________________________________________________________
+|                 |                                OUTPUT                                 |
+|_________________|_______________________________________________________________________|
+|      INPUT      | Its Group | Named component | Root complex | SMMUv1v2 | SMMUv3 | PMCG |
+|_________________|___________|_________________|______________|__________|________|______|
+| Its Group       |           |                 |              |          |        |      |
+| Named component |     X     |                 |              |    X     |   X    |      |
+| Root complex    |     X     |                 |              |    X     |   X    |      |
+| SMMUv1v2        |     X     |                 |              |          |        |      |
+| SMMUv3          |     X     |                 |              |          |        |      |
+| PMCG            |           |        X        |       X      |          |   X    |      |
+|_________________|___________|_________________|______________|__________|________|______|
+*/
+#define IORT_NODES 6
+STATIC CONST BOOLEAN ValidIdMappings[IORT_NODES * IORT_NODES] = {
+  FALSE, FALSE, FALSE, FALSE, FALSE, FALSE,   // Its Group
+  TRUE,  FALSE, FALSE, TRUE,  TRUE,  FALSE,   // Named component
+  TRUE,  FALSE, FALSE, TRUE,  TRUE,  FALSE,   // Root complex
+  TRUE,  FALSE, FALSE, FALSE, FALSE, FALSE,   // SMMUv1v2
+  TRUE,  FALSE, FALSE, FALSE, FALSE, FALSE,   // SMMUv3
+  FALSE, TRUE,  TRUE,  FALSE, TRUE,  FALSE    // PMCG
+};
+
+STATIC CONST ACPI_VALID_REFS ValidRefs = {
+  ValidIdMappings,
+  IORT_NODES,
+  L"ID mapping"
+};
+
+/**
+  Validate all ID mappings in the IORT table.
+
+  For every IORT node, check if its ID mapping are valid given the source
+  and destination node types. Also, validate against self-references
+  and output references to structures which do not exist.
+
+  This method assumes that there has already been a successful pass through
+  the table. Consequently, many security checks are skipped.
+
+  @param [in] Ptr             Pointer to the IORT table.
+  @param [in] Length          Length of the IORT table in bytes.
+  @param [in] Offset          Offset from the start of IORT table to the array
+                              of IORT nodes.
+  @param [in] NodeCount       Total number of IORT nodes in the table.
+
+  @retval EFI_SUCCESS             All ID mappings are valid.
+  @retval EFI_INVALID_PARAMETER   One or more ID mappings are invalid.
+  @retval EFI_OUT_OF_RESOURCES    Memory allocation failed.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+ValidateIdMappings (
+  IN UINT8*  Ptr,
+  IN UINT32  Length,
+  IN UINT32  Offset,
+  IN UINT32  NodeCount
+  )
+{
+  LIST_ENTRY                RefList;
+  BOOLEAN                   AllValid;
+  UINT32                    CurrNodeOffset;
+  UINT32                    RemainingCount;
+  EFI_ACPI_6_0_IO_REMAPPING_ID_TABLE  *Cursor;
+  EFI_ACPI_6_0_IO_REMAPPING_ID_TABLE  *RemappingTable;
+
+  AllValid = TRUE;
+  InitializeListHead(&RefList);
+
+  CurrNodeOffset = Offset;
+  RemainingCount = NodeCount;
+
+  // Populate the list of IORT nodes which can be referenced
+  while ((RemainingCount-- > 0) && (CurrNodeOffset < Length)) {
+
+    // Extract IORT node's Type and Length (IortNodeType and IortNodeLength)
+    ParseAcpi (
+      FALSE,
+      0,
+      NULL,
+      Ptr + CurrNodeOffset,
+      Length - CurrNodeOffset,
+      PARSER_PARAMS (IortNodeHeaderParser)
+      );
+
+    // Append the node to the list of referenceable structures
+    AcpiCrossValidatorAdd (
+      &RefList,
+      Ptr + CurrNodeOffset,
+      *IortNodeLength,
+      (UINT32)(*IortNodeType),
+      CurrNodeOffset
+      );
+
+    CurrNodeOffset += (*IortNodeLength);
+  }
+
+  CurrNodeOffset = Offset;
+  RemainingCount = NodeCount;
+
+  // Validate cross-references
+  while ((RemainingCount-- > 0) && (CurrNodeOffset < Length)) {
+
+    // Extract ID mapping array offset, ID mapping count and type value from
+    // the IORT Node (IortIdMappingOffset, IortIdMappingCount, IortNodeType)
+    ParseAcpi (
+      FALSE,
+      0,
+      NULL,
+      Ptr + CurrNodeOffset,
+      Length - CurrNodeOffset,
+      PARSER_PARAMS (IortNodeHeaderParser)
+      );
+
+    RemappingTable = (EFI_ACPI_6_0_IO_REMAPPING_ID_TABLE
+                        *)(Ptr + CurrNodeOffset + *IortIdMappingOffset);
+
+    for (Cursor = RemappingTable;
+         Cursor < RemappingTable + *IortIdMappingCount;
+         Cursor++) {
+      if (!AcpiCrossValidatorRefsValid (
+            &RefList,
+            &ValidRefs,
+            CurrNodeOffset,
+            (UINT32) (Cursor->OutputReference),
+            (UINT32) (*IortNodeType))) {
+        AllValid = FALSE;
+      }
+    }
+
+    CurrNodeOffset += (*IortNodeLength);
+  }
+
+  AcpiCrossValidatorDelete (&RefList);
+  return AllValid;
+}
+
 /**
   This function parses the ACPI IORT table.
   When trace is enabled this function parses the IORT table and traces the ACPI fields.
@@ -652,7 +792,6 @@ ParseAcpiIort (
 
   Offset = *IortNodeOffset;
   Index = 0;
-
   // Parse the specified number of IORT nodes or the IORT table buffer length.
   // Whichever is minimum.
   while ((Index++ < *IortNodeCount) &&
@@ -692,5 +831,11 @@ ParseAcpiIort (
   // Report and validate IORT Node counts
   if (mConfig.ConsistencyCheck) {
     ValidateAcpiStructCounts (&IortDatabase);
+    ValidateIdMappings (
+      Ptr + *IortNodeOffset,
+      AcpiTableLength,
+      *IortNodeOffset,
+      *IortNodeCount
+      );
   }
 }
