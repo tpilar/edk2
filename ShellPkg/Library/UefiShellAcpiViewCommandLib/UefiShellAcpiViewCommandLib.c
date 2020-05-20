@@ -99,6 +99,64 @@ RegisterAllParsers (
 }
 
 /**
+  Dump a buffer to a file
+
+  @param[in] FileName   The filename that shall be created to contain the buffer
+  @param[in] Buffer     Pointer to buffer that shall be dumped
+  @param[in] BufferSize The size of buffer to be dumped in bytes
+
+  @return The number of bytes that were written
+**/
+UINTN
+EFIAPI
+DumpFile (
+  IN CONST CHAR16* FileNameBuffer,
+  IN CONST VOID*   Buffer,
+  IN CONST UINTN   BufferSize
+  )
+{
+  EFI_STATUS          Status;
+  SHELL_FILE_HANDLE   DumpFileHandle;
+  UINTN               TransferBytes;
+
+  Status = ShellOpenFileByName (
+             FileNameBuffer,
+             &DumpFileHandle,
+             EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,
+             0
+             );
+
+  if (EFI_ERROR (Status)) {
+    ShellPrintHiiEx (
+      -1,
+      -1,
+      NULL,
+      STRING_TOKEN (STR_GEN_READONLY_MEDIA),
+      gShellAcpiViewHiiHandle,
+      L"acpiview"
+      );
+    return 0;
+  }
+
+  TransferBytes = BufferSize;
+  Status = ShellWriteFile (
+             DumpFileHandle,
+             &TransferBytes,
+             (VOID *) Buffer
+             );
+
+  if (EFI_ERROR (Status)) {
+    Print (L"ERROR: Failed to write binary file.\n");
+    TransferBytes = 0;
+  } else {
+    Print (L"DONE.\n");
+  }
+
+  ShellCloseFile (&DumpFileHandle);
+  return TransferBytes;
+}
+
+/**
   Return the file name of the help text file if not using HII.
 
   @return The string pointer to the file name.

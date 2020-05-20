@@ -11,6 +11,23 @@
 extern EFI_HII_HANDLE gShellAcpiViewHiiHandle;
 
 /**
+  Dump a buffer to a file
+
+  @param[in] FileName   The filename that shall be created to contain the buffer
+  @param[in] Buffer     Pointer to buffer that shall be dumped
+  @param[in] BufferSize The size of buffer to be dumped in bytes
+
+  @return The number of bytes that were written
+**/
+UINTN
+EFIAPI
+DumpFile (
+  IN CONST CHAR16* FileNameBuffer,
+  IN CONST VOID*   Buffer,
+  IN CONST UINTN   BufferSize
+  );
+
+/**
   Function for 'acpiview' command.
 
   @param[in] ImageHandle  Handle to the Image (NULL if internal).
