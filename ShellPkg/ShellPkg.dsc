@@ -2,7 +2,7 @@
 # Shell Package
 #
 # Copyright (c) 2007 - 2019, Intel Corporation. All rights reserved.<BR>
-# Copyright (c) 2018, Arm Limited. All rights reserved.<BR>
+# Copyright (c) 2018 - 2020, Arm Limited. All rights reserved.<BR>
 # Copyright (c) 2020, Hewlett Packard Enterprise Development LP. All rights reserved.<BR>
 #
 #    SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -143,6 +143,10 @@
       gEfiShellPkgTokenSpaceGuid.PcdShellLibAutoInitialize|FALSE
   }
   ShellPkg/DynamicCommand/DpDynamicCommand/DpApp.inf
+  ShellPkg/Application/AcpiViewApp/AcpiViewApp.inf {
+    <LibraryClasses>
+      NULL|ShellPkg/Library/UefiShellAcpiViewCommandLib/UefiShellAcpiViewCommandLib.inf
+  }
 
 [BuildOptions]
   *_*_*_CC_FLAGS = -D DISABLE_NEW_DEPRECATED_INTERFACES
