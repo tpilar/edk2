@@ -9,9 +9,8 @@
 **/
 
 #include <IndustryStandard/IoRemappingTable.h>
-#include <Library/PrintLib.h>
-#include <Library/UefiLib.h>
 #include <Library/BaseLib.h>
+#include <Library/DebugLib.h>
 #include "AcpiParser.h"
 #include "AcpiTableParser.h"
 #include "AcpiViewConfig.h"
@@ -34,6 +33,11 @@ STATIC CONST UINT32* PmuInterruptCount;
 STATIC CONST UINT32* PmuInterruptOffset;
 
 STATIC CONST UINT32* ItsCount;
+
+/**
+  Handler for each IORT Node type
+**/
+STATIC ACPI_STRUCT_INFO IortStructs[];
 
 /**
   This function validates the ID Mapping array count for the ITS node.
@@ -292,17 +296,12 @@ DumpIortNodeIdMappings (
 
   @param [in] Ptr            Pointer to the start of the buffer.
   @param [in] Length         Length of the buffer.
-  @param [in] MappingCount   The ID Mapping count.
-  @param [in] MappingOffset  The offset of the ID Mapping array
-                             from the start of the IORT table.
 **/
 STATIC
 VOID
 DumpIortNodeSmmuV1V2 (
-  IN UINT8* Ptr,
-  IN UINT16 Length,
-  IN UINT32 MappingCount,
-  IN UINT32 MappingOffset
+  IN       UINT8* Ptr,
+  IN       UINT32 Length
   )
 {
   UINT32 Index;
@@ -311,7 +310,7 @@ DumpIortNodeSmmuV1V2 (
   ParseAcpi (
     TRUE,
     2,
-    "SMMUv1 or SMMUv2 Node",
+    NULL,
     Ptr,
     Length,
     PARSER_PARAMS (IortNodeSmmuV1V2Parser)
@@ -361,9 +360,9 @@ DumpIortNodeSmmuV1V2 (
   }
 
   DumpIortNodeIdMappings (
-    Ptr + MappingOffset,
-    Length - MappingOffset,
-    MappingCount
+    Ptr + *IortIdMappingOffset,
+    Length - *IortIdMappingOffset,
+    *IortIdMappingCount
     );
 }
 
@@ -372,37 +371,34 @@ DumpIortNodeSmmuV1V2 (
 
   @param [in] Ptr            Pointer to the start of the buffer.
   @param [in] Length         Length of the buffer.
-  @param [in] MappingCount   The ID Mapping count.
-  @param [in] MappingOffset  The offset of the ID Mapping array
-                             from the start of the IORT table.
 **/
 STATIC
 VOID
 DumpIortNodeSmmuV3 (
-  IN UINT8* Ptr,
-  IN UINT16 Length,
-  IN UINT32 MappingCount,
-  IN UINT32 MappingOffset
+  IN       UINT8* Ptr,
+  IN       UINT32 Length
   )
 {
   ParseAcpi (
     TRUE,
     2,
-    "SMMUV3 Node",
+    NULL,
     Ptr,
     Length,
     PARSER_PARAMS (IortNodeSmmuV3Parser)
     );
 
   DumpIortNodeIdMappings (
-    Ptr + MappingOffset,
-    Length - MappingOffset,
-    MappingCount
+    Ptr + *IortIdMappingOffset,
+    Length - *IortIdMappingOffset,
+    *IortIdMappingCount
     );
 }
 
 /**
   This function parses the IORT ITS node.
+
+  ITS nodes have no ID mappings.
 
   @param [in] Ptr            Pointer to the start of the buffer.
   @param [in] Length         Length of the buffer.
@@ -410,8 +406,8 @@ DumpIortNodeSmmuV3 (
 STATIC
 VOID
 DumpIortNodeIts (
-  IN UINT8* Ptr,
-  IN UINT16 Length
+  IN       UINT8* Ptr,
+  IN       UINT32 Length
   )
 {
   UINT32 Offset;
@@ -420,7 +416,7 @@ DumpIortNodeIts (
   Offset = ParseAcpi (
             TRUE,
             2,
-            "ITS Node",
+            NULL,
             Ptr,
             Length,
             PARSER_PARAMS (IortNodeItsParser)
@@ -432,8 +428,6 @@ DumpIortNodeIts (
     AcpiError (ACPI_ERROR_PARSE, L"Failed to parse ITS node");
     return;
   }
-
-  Index = 0;
 
   for (Index = 0; Index < *ItsCount; Index++) {
     if (AssertMemberIntegrity(Offset, 1, Ptr, Length)) {
@@ -449,7 +443,6 @@ DumpIortNodeIts (
       Ptr + Offset,
       Length - Offset,
       PARSER_PARAMS (ItsIdParser));
-    Index++;
   }
 
   // Note: ITS does not have the ID Mappings Array
@@ -461,17 +454,12 @@ DumpIortNodeIts (
 
   @param [in] Ptr            Pointer to the start of the buffer.
   @param [in] Length         Length of the buffer.
-  @param [in] MappingCount   The ID Mapping count.
-  @param [in] MappingOffset  The offset of the ID Mapping array
-                             from the start of the IORT table.
 **/
 STATIC
 VOID
 DumpIortNodeNamedComponent (
-  IN UINT8* Ptr,
-  IN UINT16 Length,
-  IN UINT32 MappingCount,
-  IN UINT32 MappingOffset
+  IN       UINT8* Ptr,
+  IN       UINT32 Length
   )
 {
   UINT32 Offset;
@@ -479,7 +467,7 @@ DumpIortNodeNamedComponent (
   Offset = ParseAcpi (
              TRUE,
              2,
-             "Named Component Node",
+             NULL,
              Ptr,
              Length,
              PARSER_PARAMS (IortNodeNamedComponentParser)
@@ -493,9 +481,9 @@ DumpIortNodeNamedComponent (
     Ptr + Offset);
 
   DumpIortNodeIdMappings (
-    Ptr + MappingOffset,
-    Length - MappingOffset,
-    MappingCount
+    Ptr + *IortIdMappingOffset,
+    Length - *IortIdMappingOffset,
+    *IortIdMappingCount
     );
 }
 
@@ -504,32 +492,27 @@ DumpIortNodeNamedComponent (
 
   @param [in] Ptr            Pointer to the start of the buffer.
   @param [in] Length         Length of the buffer.
-  @param [in] MappingCount   The ID Mapping count.
-  @param [in] MappingOffset  The offset of the ID Mapping array
-                             from the start of the IORT table.
 **/
 STATIC
 VOID
 DumpIortNodeRootComplex (
-  IN UINT8* Ptr,
-  IN UINT16 Length,
-  IN UINT32 MappingCount,
-  IN UINT32 MappingOffset
+  IN       UINT8* Ptr,
+  IN       UINT32 Length
   )
 {
   ParseAcpi (
     TRUE,
     2,
-    "Root Complex Node",
+    NULL,
     Ptr,
     Length,
     PARSER_PARAMS (IortNodeRootComplexParser)
     );
 
   DumpIortNodeIdMappings (
-    Ptr + MappingOffset,
-    Length - MappingOffset,
-    MappingCount
+    Ptr + *IortIdMappingOffset,
+    Length - *IortIdMappingOffset,
+    *IortIdMappingCount
     );
 }
 
@@ -538,34 +521,80 @@ DumpIortNodeRootComplex (
 
   @param [in] Ptr            Pointer to the start of the buffer.
   @param [in] Length         Length of the buffer.
-  @param [in] MappingCount   The ID Mapping count.
-  @param [in] MappingOffset  The offset of the ID Mapping array
-                             from the start of the IORT table.
 **/
 STATIC
 VOID
 DumpIortNodePmcg (
-  IN UINT8* Ptr,
-  IN UINT16 Length,
-  IN UINT32 MappingCount,
-  IN UINT32 MappingOffset
-)
+  IN       UINT8* Ptr,
+  IN       UINT32 Length
+  )
 {
   ParseAcpi (
     TRUE,
     2,
-    "PMCG Node",
+    NULL,
     Ptr,
     Length,
     PARSER_PARAMS (IortNodePmcgParser)
     );
 
   DumpIortNodeIdMappings (
-    Ptr + MappingOffset,
-    Length - MappingOffset,
-    MappingCount
+    Ptr + *IortIdMappingOffset,
+    Length - *IortIdMappingOffset,
+    *IortIdMappingCount
     );
 }
+
+/**
+  Information about each IORT Node type
+**/
+STATIC ACPI_STRUCT_INFO IortStructs[] = {
+  ADD_ACPI_STRUCT_INFO_FUNC (
+    "ITS Group",
+    EFI_ACPI_IORT_TYPE_ITS_GROUP,
+    ARCH_COMPAT_ARM | ARCH_COMPAT_AARCH64,
+    DumpIortNodeIts
+    ),
+  ADD_ACPI_STRUCT_INFO_FUNC (
+    "Named Component",
+    EFI_ACPI_IORT_TYPE_NAMED_COMP,
+    ARCH_COMPAT_ARM | ARCH_COMPAT_AARCH64,
+    DumpIortNodeNamedComponent
+    ),
+  ADD_ACPI_STRUCT_INFO_FUNC (
+    "Root Complex",
+    EFI_ACPI_IORT_TYPE_ROOT_COMPLEX,
+    ARCH_COMPAT_ARM | ARCH_COMPAT_AARCH64,
+    DumpIortNodeRootComplex
+    ),
+  ADD_ACPI_STRUCT_INFO_FUNC (
+    "SMMUv1 or SMMUv2",
+    EFI_ACPI_IORT_TYPE_SMMUv1v2,
+    ARCH_COMPAT_ARM | ARCH_COMPAT_AARCH64,
+    DumpIortNodeSmmuV1V2
+    ),
+  ADD_ACPI_STRUCT_INFO_FUNC (
+    "SMMUv3",
+    EFI_ACPI_IORT_TYPE_SMMUv3,
+    ARCH_COMPAT_ARM | ARCH_COMPAT_AARCH64,
+    DumpIortNodeSmmuV3
+    ),
+  ADD_ACPI_STRUCT_INFO_FUNC (
+    "PMCG",
+    EFI_ACPI_IORT_TYPE_PMCG,
+    ARCH_COMPAT_ARM | ARCH_COMPAT_AARCH64,
+    DumpIortNodePmcg
+    )
+};
+
+/**
+  IORT structure database
+**/
+STATIC ACPI_STRUCT_DATABASE IortDatabase = {
+  "IORT Node",
+  IortStructs,
+  ARRAY_SIZE (IortStructs)
+};
 
 /**
   This function parses the ACPI IORT table.
@@ -601,6 +630,8 @@ ParseAcpiIort (
   if (!Trace) {
     return;
   }
+
+  ResetAcpiStructCounts (&IortDatabase);
 
   ParseAcpi (
     TRUE,
@@ -651,62 +682,15 @@ ParseAcpiIort (
       return;
     }
 
-    PrintFieldName (2, L"* Node Offset *");
-    AcpiInfo (L"0x%x", Offset);
+    // Parse the IORT Node
+    ParseAcpiStruct (
+      2, Ptr + Offset, &IortDatabase, Offset, *IortNodeType, *IortNodeLength);
 
-    switch (*IortNodeType) {
-      case EFI_ACPI_IORT_TYPE_ITS_GROUP:
-        DumpIortNodeIts (
-          Ptr + Offset,
-          *IortNodeLength
-          );
-        break;
-      case EFI_ACPI_IORT_TYPE_NAMED_COMP:
-        DumpIortNodeNamedComponent (
-          Ptr + Offset,
-          *IortNodeLength,
-          *IortIdMappingCount,
-          *IortIdMappingOffset
-          );
-        break;
-      case EFI_ACPI_IORT_TYPE_ROOT_COMPLEX:
-        DumpIortNodeRootComplex (
-          Ptr + Offset,
-          *IortNodeLength,
-          *IortIdMappingCount,
-          *IortIdMappingOffset
-          );
-        break;
-      case EFI_ACPI_IORT_TYPE_SMMUv1v2:
-        DumpIortNodeSmmuV1V2 (
-          Ptr + Offset,
-          *IortNodeLength,
-          *IortIdMappingCount,
-          *IortIdMappingOffset
-          );
-        break;
-      case EFI_ACPI_IORT_TYPE_SMMUv3:
-        DumpIortNodeSmmuV3 (
-          Ptr + Offset,
-          *IortNodeLength,
-          *IortIdMappingCount,
-          *IortIdMappingOffset
-          );
-        break;
-      case EFI_ACPI_IORT_TYPE_PMCG:
-        DumpIortNodePmcg (
-          Ptr + Offset,
-          *IortNodeLength,
-          *IortIdMappingCount,
-          *IortIdMappingOffset
-        );
-        break;
-
-      default:
-        AcpiError (
-          ACPI_ERROR_VALUE, L"Unsupported IORT Node type = %d", *IortNodeType);
-    } // switch
-
-    Offset += (*IortNodeLength);
+    Offset += *IortNodeLength;
   } // while
+
+  // Report and validate IORT Node counts
+  if (mConfig.ConsistencyCheck) {
+    ValidateAcpiStructCounts (&IortDatabase);
+  }
 }
