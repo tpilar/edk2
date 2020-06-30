@@ -1,9 +1,8 @@
 #include <Uefi.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
-
-#include "ConfigurationManagerDumpApp.h"
 
 EDKII_CONFIGURATION_MANAGER_PROTOCOL *mCfgMgr;
 
@@ -33,10 +32,7 @@ UefiMain(
       continue;
     }
 
-    Print (
-      L"<%s>::<%s>\n",
-      ObjectNameSpaceString[EObjNameSpaceStandard],
-      StdObjectString[ObjectId - EObjNameSpaceStandard]);
+    Print (L"<%s>\n", CmObjectIdName (ObjectId));
 
     Print (
       L"Id=%x Size=0x%x at=%p count=%d\n",
@@ -54,10 +50,7 @@ UefiMain(
       continue;
     }
 
-    Print (
-      L"<%s>::<%s>\n",
-      ObjectNameSpaceString[EObjNameSpaceArm],
-      ArmObjectString[ObjectId - EObjNameSpaceArm]);
+    Print (L"<%s>\n", CmObjectIdName(ObjectId));
 
     Print (
       L"Id=%x Size=0x%x at=%p count=%d\n",

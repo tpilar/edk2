@@ -25,6 +25,18 @@ EFIAPI
 GetNewToken();
 
 /**
+  Returns the user friendly name for the given ObjectId.
+
+  @param[in]  CmObjectId   The id of the configuration manager object
+  @return                  User friendly name for object id.
+**/
+const CHAR16*
+EFIAPI
+CmObjectIdName(
+  IN CONST CM_OBJECT_ID            CmObjectrId
+  );
+
+/**
   Return the count of objects of a given ObjectId.
 
   @param[in]  CmObjectId   The id of the desired configuration objects.

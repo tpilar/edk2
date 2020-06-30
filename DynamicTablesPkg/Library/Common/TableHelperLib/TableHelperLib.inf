@@ -16,6 +16,7 @@
 
 [Sources]
   TableHelper.c
+  ConfigurationObjectStrings.c
 
 [Packages]
   MdePkg/MdePkg.dec

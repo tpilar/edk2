@@ -23,8 +23,6 @@
 
 [Sources]
   ConfigurationManagerDumpApp.c
-  ConfigurationManagerDumpApp.h
-  ConfigurationObjectStrings.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -32,6 +30,7 @@
   DynamicTablesPkg/DynamicTablesPkg.dec
 
 [LibraryClasses]
+  TableHelperLib
   UefiLib
   UefiBootServicesTableLib
   UefiApplicationEntryPoint
