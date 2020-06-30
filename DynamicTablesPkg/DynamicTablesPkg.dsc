@@ -30,6 +30,7 @@
   PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
   UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
   UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
+  UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
 
 [LibraryClasses.ARM, LibraryClasses.AARCH64]
   NULL|ArmPkg/Library/CompilerIntrinsicsLib/CompilerIntrinsicsLib.inf
@@ -37,6 +38,7 @@
 
 [Components.common]
   DynamicTablesPkg/Library/Common/TableHelperLib/TableHelperLib.inf
+  DynamicTablesPkg/Applications/ConfigurationManagerDumpApp/ConfigurationManagerDumpApp.inf
 
 [BuildOptions]
   *_*_*_CC_FLAGS = -DDISABLE_NEW_DEPRECATED_INTERFACES

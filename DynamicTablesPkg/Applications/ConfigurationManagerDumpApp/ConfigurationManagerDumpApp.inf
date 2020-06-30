@@ -1,0 +1,42 @@
+## @file
+#  Application that will dump the contents of the configuration
+#  manager.
+#
+#  Copyright (c) 2020, ARM Limited. All rights reserved.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010019
+  BASE_NAME                      = ConfigurationManagerDumpApp
+  FILE_GUID                      = 1E12FA81-8465-4D78-918F-735DB8CB828B
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = ARM AARCH64
+#
+
+[Sources]
+  ConfigurationManagerDumpApp.c
+  ConfigurationManagerDumpApp.h
+  ConfigurationObjectStrings.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  DynamicTablesPkg/DynamicTablesPkg.dec
+
+[LibraryClasses]
+  UefiLib
+  UefiBootServicesTableLib
+  UefiApplicationEntryPoint
+
+[Protocols]
+  gEdkiiConfigurationManagerProtocolGuid        # PROTOCOL PRODUCES
+
+
