@@ -50,10 +50,14 @@ DestroyNode (
   ZeroMem(CmEntry, sizeof(CM_LIST_ENTRY));
 }
 
+/**
+  Debug method to print information about stored nodes to serial
+  port. Prints one line for each entry in the ObjectList.
+**/
 static
 VOID
 EFIAPI
-DescribeDb ()
+DescribeDb (VOID)
 {
   LIST_ENTRY *Entry;
 
@@ -71,6 +75,16 @@ DescribeDb ()
   }
 }
 
+/** Destroys a CmObject populated by a call to the GetObject interface.
+
+    The caller of GetObject must use this function to dispose of CmObject
+    populated by the GetObject call when the CmObject is no longer needed.
+
+    @param [in]  This         Pointer to the Configuration Manager Protocol
+    @param [in]  CmObject     Pointer to the CmObject that has been populated
+                              by the GetObject function and is to be destroyed.
+    @retval EFI_SUCCESS       The CmObject was successfully destroyed
+**/
 EFI_STATUS
 EFIAPI
 FreeObject (
@@ -88,6 +102,31 @@ FreeObject (
   return EFI_SUCCESS;
 }
 
+/** Retrieves a CmObject with a matching ObjectId and a cross reference
+    Token from the configuration manager.
+
+    If Token is CM_NULL_TOKEN, the function provides in its output all
+    the objects of the given CmObjectId. If the Token is not CM_NULL_TOKEN,
+    the function provides only those object that match both the CmObjectId
+    and Token.
+
+    CmObject populated by this method must be destryed by the caller using
+    the FreeObject interface.
+
+  @param [in]  This        Pointer to the Configuration Manager Protocol.
+  @param [in]  CmObjectId  The Configuration Manager Object ID.
+  @param [in]  Token       An optional token identifying the object. If
+                           unused this must be CM_NULL_TOKEN.
+  @param [out] CmObject    Pointer to the Configuration Manager Object
+                           descriptor describing the requested Object.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_NOT_FOUND         The required object information is not found.
+  @retval EFI_BAD_BUFFER_SIZE   The size returned by the Configuration Manager
+                                is less than the Object size for the requested
+                                object.
+**/
 EFI_STATUS
 EFIAPI
 GetObject (
@@ -153,6 +192,38 @@ GetObject (
   return EFI_SUCCESS;
 }
 
+/** Modify the CmObject stored in the configuration manager that has a
+    matching ObjectId and a cross reference Token.
+
+    If Token is CM_NULL_TOKEN, and CmObject is not NULL, then the objects
+    in the configuration manager that match the CmObjectId and do not
+    have an associated cross reference Token are replaced by the contents of
+    CmObject.
+
+    If Token is not CM_NULL_TOKEN and CmObject is not NULL, then the objects
+    that match both CmObjectId and Token in the configuration manager are
+    replaced with the contents of CmObject.
+
+    If CmObject is NULL, then objects that match the CmObjectId and Token
+    are removed from the configuration manager. If Token is also CM_NULL_TOKEN,
+    then all objects of given CmObjectId are removed, regardless of their
+    cross-reference Token.
+
+  @param [in]  This        Pointer to the Configuration Manager Protocol.
+  @param [in]  CmObjectId  The Configuration Manager Object ID.
+  @param [in]  Token       An optional token identifying the object. If
+                           unused this must be CM_NULL_TOKEN.
+  @param [out] CmObject    Pointer to the Configuration Manager Object
+                           descriptor describing the Object.
+
+  @retval EFI_SUCCESS           The operation completed successfully.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_NOT_FOUND         The required object information is not found.
+  @retval EFI_BAD_BUFFER_SIZE   The size returned by the Configuration Manager
+                                is less than the Object size for the requested
+                                object.
+  @retval EFI_UNSUPPORTED       This operation is not supported.
+**/
 EFI_STATUS
 EFIAPI
 SetObject (
@@ -234,6 +305,12 @@ EDKII_CONFIGURATION_MANAGER_PROTOCOL CfgMgr = {
   FreeObject
 };
 
+/**
+  Initialiser method called when module is loaded and executed.
+
+  Initialise the ObjectList and install the ConfigurationManagerProtocol
+  instance on the ImageHandle.
+**/
 EFI_STATUS
 EFIAPI
 ConfigurationManagerInit (
