@@ -43,4 +43,15 @@
   #
   DynamicTablesPkg/Drivers/ConfigurationManagerDxe/Components/Component1.inf
   DynamicTablesPkg/Drivers/ConfigurationManagerDxe/Components/Component2.inf
+  
+  #
+  # Reference Implementation of Configuration Manager with some dummy libraries
+  #
+  DynamicTablesPkg/Drivers/ConfigurationManagerDxe/ConfigurationManagerDxe.inf {
+    <Defines>
+      FILE_GUID = C4A34C80-526D-4DA1-8F87-4335EF13FB8F
+    <LibraryClasses>
+      NULL|DynamicTablesPkg/Drivers/ConfigurationManagerDxe/Components/Component1.inf
+      NULL|DynamicTablesPkg/Drivers/ConfigurationManagerDxe/Components/Component2.inf
+  }
 

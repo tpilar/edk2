@@ -1,0 +1,254 @@
+#include <Uefi.h>
+#include <Protocol/ConfigurationManagerProtocol.h>
+
+#include <Library/DebugLib.h>
+#include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/MemoryAllocationLib.h>
+#include <Library/UefiBootServicesTableLib.h>
+#include <Library/TableHelperLib.h>
+#include <Library/UefiLib.h>
+
+typedef struct _CM_LIST_ENTRY {
+  LIST_ENTRY Entry;               ///< Linked list descriptor
+  CM_OBJECT_TOKEN Token;          ///< Cross reference token for the object
+  CM_OBJ_DESCRIPTOR Object;       ///< CM Object descriptor
+} CM_LIST_ENTRY;
+
+/*
+  Linked list to internally store CM_LIST_ENTRIES
+  Head node will never contain any data
+*/
+LIST_ENTRY ObjectList;
+
+/**
+  Unlink a given node from the object list, unallocating and
+  zeroing memory.
+
+  The method removes the entry from the object list, frees the
+  underlying memory in the object stored in the entry, zeroes
+  the entry instance and then frees the entry instance.
+
+  @param[in] CmEntry The entry into the local ObjectList
+**/
+static
+VOID
+EFIAPI
+DestroyNode (
+  IN CM_LIST_ENTRY *CmEntry
+  )
+{
+  if (!CmEntry) {
+    return;
+  }
+
+  RemoveEntryList (&CmEntry->Entry);
+  if (CmEntry->Object.Data) {
+    FreePool(CmEntry->Object.Data);
+  }
+
+  ZeroMem(CmEntry, sizeof(CM_LIST_ENTRY));
+}
+
+static
+VOID
+EFIAPI
+DescribeDb ()
+{
+  LIST_ENTRY *Entry;
+
+  for (Entry = GetFirstNode (&ObjectList); Entry != &ObjectList;
+       Entry = GetNextNode (&ObjectList, Entry)) {
+    CM_LIST_ENTRY *CmEntry = (CM_LIST_ENTRY *) Entry;
+    PrintSerial (
+      L"Entry=%p Id=%x Token=%x %p[%d]=%x\n",
+      CmEntry,
+      CmEntry->Object.ObjectId,
+      CmEntry->Token,
+      CmEntry->Object.Data,
+      CmEntry->Object.Count,
+      CmEntry->Object.Size);
+  }
+}
+
+EFI_STATUS
+EFIAPI
+FreeObject (
+  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST This,
+  IN        CM_OBJ_DESCRIPTOR                     *       CmObject
+  )
+{
+  if (!CmObject || !This || !CmObject->Data) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  FreePool(CmObject->Data);
+  ZeroMem(CmObject, sizeof(CM_OBJ_DESCRIPTOR));
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+EFIAPI
+GetObject (
+  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST This,
+  IN  CONST CM_OBJECT_ID                                  CmObjectId,
+  IN  CONST CM_OBJECT_TOKEN                               Token OPTIONAL,
+  IN  OUT   CM_OBJ_DESCRIPTOR                     * CONST CmObject
+  )
+{
+  LIST_ENTRY *Entry;
+  CM_LIST_ENTRY *CmEntry;
+  UINTN NewSize;
+  UINTN AllocatedSize;
+
+  AllocatedSize = EFI_PAGE_SIZE;
+  CmObject->Data = AllocateZeroPool (AllocatedSize);
+  if (!CmObject->Data) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  CmObject->Size = 0;
+  CmObject->ObjectId = CmObjectId;
+
+  for (Entry = GetFirstNode (&ObjectList); Entry != &ObjectList;
+       Entry = GetNextNode (&ObjectList, Entry)) {
+    CmEntry = (CM_LIST_ENTRY *) Entry;
+
+    // Ignore items that do not match CmObjectId
+    if (CmEntry->Object.ObjectId != CmObjectId) {
+      continue;
+    }
+
+    // If we have Token, ignore items that do not match it
+    if (Token != CM_NULL_TOKEN && Token != CmEntry->Token) {
+      continue;
+    }
+
+    // We should almost never need to reallocate
+    // 4k ought to be enough for everyone
+    if (CmObject->Size + CmEntry->Object.Size > AllocatedSize) {
+      NewSize = (AllocatedSize * CmEntry->Object.Size) * 2;
+      CmObject->Data = ReallocatePool (AllocatedSize, NewSize, CmObject->Data);
+      if (!CmObject->Data) {
+        return EFI_OUT_OF_RESOURCES;
+      }
+      AllocatedSize = NewSize;
+    }
+
+    // Copy the contents into output object
+    CopyMem (
+      CmObject->Data + CmObject->Size,
+      CmEntry->Object.Data,
+      CmEntry->Object.Size);
+    CmObject->Size += CmEntry->Object.Size;
+    CmObject->Count += CmEntry->Object.Count;
+  }
+
+  if (CmObject->Count == 0) {
+    FreeObject(This, CmObject);
+    return EFI_NOT_FOUND;
+  }
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+EFIAPI
+SetObject (
+  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST This,
+  IN  CONST CM_OBJECT_ID                                  CmObjectId,
+  IN  CONST CM_OBJECT_TOKEN                               Token OPTIONAL,
+  IN        CM_OBJ_DESCRIPTOR                     * CONST CmObject
+  )
+{
+  LIST_ENTRY *Entry;
+  CM_LIST_ENTRY *CmEntry;
+
+  VOID *Data = AllocateCopyPool (CmObject->Size, CmObject->Data);
+  if (!Data) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  for (Entry = GetFirstNode (&ObjectList); Entry != &ObjectList;
+       Entry = GetNextNode (&ObjectList, Entry)) {
+    CmEntry = (CM_LIST_ENTRY *) Entry;
+
+    // Do not modify entry if object id mismatches.
+    if (CmEntry->Object.ObjectId != CmObjectId) {
+      continue;
+    }
+
+    // If token specified, do not modify entry if token mismatches.
+    if (Token != CM_NULL_TOKEN && Token != CmEntry->Token) {
+      continue;
+    }
+
+    // After discarding mismatched type and tokens erase all remaining nodes
+    // if CmObject is NULL. If token is not specified this will erase all
+    // nodes of the given id even if they have a token.
+    if (CmObject == NULL) {
+      DestroyNode(CmEntry);
+
+    // If Object is not NULL, we set it on entry that matches token, even
+    // if the token is CM_NULL_TOKEN. So setting an object without a token
+    // will not erase objects of same id that do have a cross-reference token
+    } else if (Token == CmEntry->Token) {
+      FreePool(CmEntry->Object.Data);
+      CmEntry->Object.Size = CmObject->Size;
+      CmEntry->Object.Count = CmObject->Count;
+      CmEntry->Object.ObjectId = CmObject->ObjectId;
+      CmEntry->Object.Data = Data;
+      return EFI_SUCCESS;
+    }
+  }
+
+  if (!CmObject) {
+    return EFI_SUCCESS;
+  }
+
+  // We still have an object and did not find a matching entry
+  // in the ObjectList so we create a new one
+  CmEntry = AllocateZeroPool (sizeof (CM_LIST_ENTRY));
+  if (!CmEntry) {
+    FreePool(Data);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  CmEntry->Token = Token;
+  CmEntry->Object.Data = Data;
+  CmEntry->Object.Size = CmObject->Size;
+  CmEntry->Object.Count = CmObject->Count;
+  CmEntry->Object.ObjectId = CmObject->ObjectId;
+
+  InsertHeadList (&ObjectList, &CmEntry->Entry);
+
+  return EFI_SUCCESS;
+}
+
+EDKII_CONFIGURATION_MANAGER_PROTOCOL CfgMgr = {
+  EDKII_CONFIGURATION_MANAGER_PROTOCOL_REVISION,
+  GetObject,
+  SetObject,
+  NULL,
+  FreeObject
+};
+
+EFI_STATUS
+EFIAPI
+ConfigurationManagerInit (
+  IN  EFI_HANDLE            ImageHandle,
+  IN  EFI_SYSTEM_TABLE   *  SystemTable
+  )
+{
+  EFI_STATUS Status = EFI_NOT_STARTED;
+
+  InitializeListHead(&ObjectList);
+
+  Status = gBS->InstallMultipleProtocolInterfaces (
+    &ImageHandle, &gEdkiiConfigurationManagerProtocolGuid, &CfgMgr, NULL);
+
+  DescribeDb();
+
+  return EFI_SUCCESS;
+}

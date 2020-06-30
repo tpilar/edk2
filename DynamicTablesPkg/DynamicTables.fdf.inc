@@ -16,3 +16,4 @@
   # Dynamic Tables Dxe
   #
   INF DynamicTablesPkg/Drivers/DynamicTableManagerDxe/DynamicTableManagerDxe.inf
+  INF DynamicTablesPkg/Drivers/ConfigurationManagerDxe/ConfigurationManagerDxe.inf
