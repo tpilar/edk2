@@ -14,12 +14,12 @@
 #include <IndustryStandard/SerialPortConsoleRedirectionTable.h>
 #include <Library/AcpiLib.h>
 #include <Library/DebugLib.h>
+#include <Library/MemoryAllocationLib.h>
 #include <Protocol/AcpiTable.h>
 
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 
@@ -83,15 +83,6 @@ EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE AcpiSpcr = {
 
 #pragma pack()
 
-/** This macro expands to a function that retrieves the Serial
-    Port Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjSerialConsolePortInfo,
-  CM_ARM_SERIAL_PORT_INFO
-  )
-
 /** Construct the SPCR ACPI table.
 
   This function invokes the Configuration Manager protocol interface
@@ -131,7 +122,6 @@ BuildSpcrTable (
 
   ASSERT (This != NULL);
   ASSERT (AcpiTableInfo != NULL);
-  ASSERT (CfgMgrProtocol != NULL);
   ASSERT (Table != NULL);
   ASSERT (AcpiTableInfo->TableGeneratorId == This->GeneratorID);
   ASSERT (AcpiTableInfo->AcpiTableSignature == This->AcpiTableSignature);
@@ -149,21 +139,10 @@ BuildSpcrTable (
     return EFI_INVALID_PARAMETER;
   }
 
-  *Table = NULL;
-
-  Status = GetEArmObjSerialConsolePortInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &SerialPortInfo,
-             NULL
-             );
+  Status = CfgMgrGetSimpleObject (
+    EArmObjSerialConsolePortInfo, (VOID **)&SerialPortInfo);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: SPCR: Failed to get serial port information. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   if (SerialPortInfo->BaseAddress == 0) {
@@ -207,11 +186,6 @@ BuildSpcrTable (
     AcpiTableInfo,
     sizeof (EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE));
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: SPCR: Failed to add ACPI header. Status = %r\n",
-      Status
-      ));
     goto error_handler;
   }
 
@@ -268,6 +242,7 @@ BuildSpcrTable (
   *Table = (EFI_ACPI_DESCRIPTION_HEADER*)&AcpiSpcr;
 
 error_handler:
+  FreePool (SerialPortInfo);
   return Status;
 }
 

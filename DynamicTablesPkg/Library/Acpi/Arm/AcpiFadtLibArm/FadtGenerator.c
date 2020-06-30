@@ -11,12 +11,12 @@
 
 #include <Library/AcpiLib.h>
 #include <Library/DebugLib.h>
+#include <Library/MemoryAllocationLib.h>
 #include <Protocol/AcpiTable.h>
 
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 
@@ -198,46 +198,7 @@ EFI_ACPI_6_3_FIXED_ACPI_DESCRIPTION_TABLE AcpiFadt = {
 
 #pragma pack()
 
-/** This macro expands to a function that retrieves the Power
-    Management Profile Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjPowerManagementProfileInfo,
-  CM_ARM_POWER_MANAGEMENT_PROFILE_INFO
-  );
-
-/** This macro expands to a function that retrieves the Boot
-    Architecture Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjBootArchInfo,
-  CM_ARM_BOOT_ARCH_INFO
-  );
-
-/** This macro expands to a function that retrieves the Hypervisor
-    Vendor ID from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjHypervisorVendorIdentity,
-  CM_ARM_HYPERVISOR_VENDOR_ID
-  );
-
-/** This macro expands to a function that retrieves the Fixed
-  feature flags for the platform from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjFixedFeatureFlags,
-  CM_ARM_FIXED_FEATURE_FLAGS
-  );
-
 /** Update the Power Management Profile information in the FADT Table.
-
-  @param [in]  CfgMgrProtocol Pointer to the Configuration Manager
-                              Protocol Interface.
 
   @retval EFI_SUCCESS           Success.
   @retval EFI_INVALID_PARAMETER A parameter is invalid.
@@ -249,30 +210,16 @@ GET_OBJECT_LIST (
 STATIC
 EFI_STATUS
 EFIAPI
-FadtAddPmProfileInfo (
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol
-)
+FadtAddPmProfileInfo (VOID)
 {
   EFI_STATUS                              Status;
   CM_ARM_POWER_MANAGEMENT_PROFILE_INFO  * PmProfile;
 
-  ASSERT (CfgMgrProtocol != NULL);
-
   // Get the Power Management Profile from the Platform Configuration Manager
-  Status = GetEArmObjPowerManagementProfileInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &PmProfile,
-             NULL
-             );
+  Status = CfgMgrGetSimpleObject (
+    EArmObjPowerManagementProfileInfo, (VOID **)&PmProfile);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: FADT: Failed to get Power Management Profile information." \
-      " Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   DEBUG ((
@@ -283,14 +230,12 @@ FadtAddPmProfileInfo (
 
   AcpiFadt.PreferredPmProfile = PmProfile->PowerManagementProfile;
 
-error_handler:
-  return Status;
+  FreePool(PmProfile);
+
+  return EFI_SUCCESS;
 }
 
 /** Updates the Boot Architecture information in the FADT Table.
-
-  @param [in]  CfgMgrProtocol Pointer to the Configuration Manager
-                              Protocol Interface.
 
   @retval EFI_SUCCESS           Success.
   @retval EFI_INVALID_PARAMETER A parameter is invalid.
@@ -302,29 +247,15 @@ error_handler:
 STATIC
 EFI_STATUS
 EFIAPI
-FadtAddBootArchInfo (
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol
-)
+FadtAddBootArchInfo (VOID)
 {
   EFI_STATUS               Status;
   CM_ARM_BOOT_ARCH_INFO  * BootArchInfo;
 
-  ASSERT (CfgMgrProtocol != NULL);
-
   // Get the Boot Architecture flags from the Platform Configuration Manager
-  Status = GetEArmObjBootArchInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &BootArchInfo,
-             NULL
-             );
+  Status = CfgMgrGetSimpleObject (EArmObjBootArchInfo, (VOID **)&BootArchInfo);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: FADT: Failed to get Boot Architecture flags. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   DEBUG ((
@@ -335,14 +266,12 @@ FadtAddBootArchInfo (
 
   AcpiFadt.ArmBootArch = BootArchInfo->BootArchFlags;
 
-error_handler:
-  return Status;
+  FreePool(BootArchInfo);
+
+  return EFI_SUCCESS;
 }
 
 /** Update the Hypervisor Vendor ID in the FADT Table.
-
-  @param [in]  CfgMgrProtocol Pointer to the Configuration Manager
-                              Protocol Interface.
 
   @retval EFI_SUCCESS           Success.
   @retval EFI_INVALID_PARAMETER A parameter is invalid.
@@ -354,38 +283,16 @@ error_handler:
 STATIC
 EFI_STATUS
 EFIAPI
-FadtAddHypervisorVendorId (
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol
-)
+FadtAddHypervisorVendorId (VOID)
 {
   EFI_STATUS                     Status;
   CM_ARM_HYPERVISOR_VENDOR_ID  * HypervisorVendorInfo;
 
-  ASSERT (CfgMgrProtocol != NULL);
-
   // Get the Hypervisor Vendor ID from the Platform Configuration Manager
-  Status = GetEArmObjHypervisorVendorIdentity (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &HypervisorVendorInfo,
-             NULL
-             );
+  Status = CfgMgrGetSimpleObject (
+    EArmObjHypervisorVendorIdentity, (VOID **) &HypervisorVendorInfo);
   if (EFI_ERROR (Status)) {
-    if (Status == EFI_NOT_FOUND) {
-      DEBUG ((
-        DEBUG_INFO,
-        "INFO: FADT: Platform does not have a Hypervisor Vendor ID."
-        "Status = %r\n",
-        Status
-        ));
-    } else {
-      DEBUG ((
-        DEBUG_ERROR,
-        "ERROR: FADT: Failed to get Hypervisor Vendor ID. Status = %r\n",
-        Status
-        ));
-    }
-    goto error_handler;
+    return Status;
   }
 
   DEBUG ((
@@ -396,8 +303,9 @@ FadtAddHypervisorVendorId (
 
   AcpiFadt.HypervisorVendorIdentity = HypervisorVendorInfo->HypervisorVendorId;
 
-error_handler:
-  return Status;
+  FreePool (HypervisorVendorInfo);
+
+  return EFI_SUCCESS;
 }
 
 /** Update the Fixed Feature Flags in the FADT Table.
@@ -415,38 +323,17 @@ error_handler:
 STATIC
 EFI_STATUS
 EFIAPI
-FadtAddFixedFeatureFlags (
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol
-)
+FadtAddFixedFeatureFlags (VOID)
 {
   EFI_STATUS                    Status;
   CM_ARM_FIXED_FEATURE_FLAGS  * FixedFeatureFlags;
 
-  ASSERT (CfgMgrProtocol != NULL);
-
   // Get the Fixed feature flags from the Platform Configuration Manager
-  Status = GetEArmObjFixedFeatureFlags (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &FixedFeatureFlags,
-             NULL
-             );
+
+  Status = CfgMgrGetSimpleObject (
+    EArmObjFixedFeatureFlags, (VOID **)&FixedFeatureFlags);
   if (EFI_ERROR (Status)) {
-    if (Status == EFI_NOT_FOUND) {
-      DEBUG ((
-        DEBUG_INFO,
-        "INFO: FADT: Platform does not define additional Fixed feature flags."
-        "Status = %r\n",
-        Status
-        ));
-    } else {
-      DEBUG ((
-        DEBUG_ERROR,
-        "ERROR: FADT: Failed to get Fixed feature flags. Status = %r\n",
-        Status
-        ));
-    }
-    goto error_handler;
+    return Status;
   }
 
   DEBUG ((
@@ -467,8 +354,9 @@ FadtAddFixedFeatureFlags (
   AcpiFadt.Flags |= (FixedFeatureFlags->Flags &
                      VALID_HARDWARE_REDUCED_FLAG_MASK);
 
-error_handler:
-  return Status;
+  FreePool (FixedFeatureFlags);
+
+  return EFI_SUCCESS;
 }
 
 /** Construct the FADT table.
@@ -507,7 +395,6 @@ BuildFadtTable (
 
   ASSERT (This != NULL);
   ASSERT (AcpiTableInfo != NULL);
-  ASSERT (CfgMgrProtocol != NULL);
   ASSERT (Table != NULL);
   ASSERT (AcpiTableInfo->TableGeneratorId == This->GeneratorID);
   ASSERT (AcpiTableInfo->AcpiTableSignature == This->AcpiTableSignature);
@@ -533,30 +420,25 @@ BuildFadtTable (
     AcpiTableInfo,
     sizeof (EFI_ACPI_6_3_FIXED_ACPI_DESCRIPTION_TABLE));
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: FADT: Failed to add ACPI header. Status = %r\n",
-      Status
-      ));
     return Status;
   }
 
   // Update PmProfile Info
-  Status = FadtAddPmProfileInfo (CfgMgrProtocol);
+  Status = FadtAddPmProfileInfo ();
   if (EFI_ERROR (Status)) {
-    goto error_handler;
+    return Status;
   }
 
   // Update BootArch Info
-  Status = FadtAddBootArchInfo (CfgMgrProtocol);
+  Status = FadtAddBootArchInfo ();
   if (EFI_ERROR (Status)) {
-    goto error_handler;
+    return Status;
   }
 
   // Add the Hypervisor Vendor Id if present
   // Note if no hypervisor is present the zero bytes
   // will be placed in this field.
-  Status = FadtAddHypervisorVendorId (CfgMgrProtocol);
+  Status = FadtAddHypervisorVendorId ();
   if (EFI_ERROR (Status)) {
     if (Status == EFI_NOT_FOUND) {
       DEBUG ((
@@ -570,11 +452,11 @@ BuildFadtTable (
         "ERROR: FADT: Error reading Hypervisor Vendor ID, Status = %r",
         Status
         ));
-      goto error_handler;
+      return Status;
     }
   }
 
-  Status = FadtAddFixedFeatureFlags (CfgMgrProtocol);
+  Status = FadtAddFixedFeatureFlags ();
   if (EFI_ERROR (Status)) {
     if (Status == EFI_NOT_FOUND) {
       DEBUG ((
@@ -582,20 +464,19 @@ BuildFadtTable (
         "INFO: FADT: No Fixed feature flags found," \
         " assuming no additional flags are defined for the platform.\n"
         ));
-      Status = EFI_SUCCESS;
     } else {
       DEBUG ((
         DEBUG_ERROR,
         "ERROR: FADT: Error reading Fixed feature flags, Status = %r",
         Status
         ));
-      goto error_handler;
+      return Status;
     }
   }
 
-  *Table = (EFI_ACPI_DESCRIPTION_HEADER*)&AcpiFadt;
-error_handler:
-  return Status;
+  *Table = (EFI_ACPI_DESCRIPTION_HEADER *) &AcpiFadt;
+
+  return EFI_SUCCESS;
 }
 
 /** This macro defines the FADT Table Generator revision.

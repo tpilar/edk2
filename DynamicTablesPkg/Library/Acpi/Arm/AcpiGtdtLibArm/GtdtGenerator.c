@@ -17,7 +17,6 @@
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 
@@ -32,49 +31,11 @@ Requirements:
   - EArmObjGTBlockTimerFrameInfo (OPTIONAL)
 */
 
-/** This macro expands to a function that retrieves the Generic
-    Timer Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGenericTimerInfo,
-  CM_ARM_GENERIC_TIMER_INFO
-  );
-
-/** This macro expands to a function that retrieves the SBSA Generic
-    Watchdog Timer Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjPlatformGenericWatchdogInfo,
-  CM_ARM_GENERIC_WATCHDOG_INFO
-  );
-
-/** This macro expands to a function that retrieves the Platform Generic
-    Timer Block Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjPlatformGTBlockInfo,
-  CM_ARM_GTBLOCK_INFO
-  );
-
-/** This macro expands to a function that retrieves the Generic
-  Timer Block Timer Frame Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGTBlockTimerFrameInfo,
-  CM_ARM_GTBLOCK_TIMER_FRAME_INFO
-  );
-
 /** Add the Generic Timer Information to the GTDT table.
 
   Also update the Platform Timer offset information if the platform
   implements platform timers.
 
-  @param [in]  CfgMgrProtocol     Pointer to the Configuration Manager
-                                  Protocol Interface.
   @param [in]  Gtdt               Pointer to the GTDT Table.
   @param [in]  PlatformTimerCount Platform timer count.
   @param [in]  AcpiTableRevision  Acpi Revision targeted by the platform.
@@ -90,7 +51,6 @@ STATIC
 EFI_STATUS
 EFIAPI
 AddGenericTimerInfo (
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL         * CONST CfgMgrProtocol,
   IN        EFI_ACPI_6_3_GENERIC_TIMER_DESCRIPTION_TABLE * CONST Gtdt,
   IN  CONST UINT32                                               PlatformTimerCount,
   IN  CONST UINT32                                               AcpiTableRevision
@@ -99,24 +59,13 @@ AddGenericTimerInfo (
   EFI_STATUS                   Status;
   CM_ARM_GENERIC_TIMER_INFO  * GenericTimerInfo;
 
-  ASSERT (CfgMgrProtocol != NULL);
-  ASSERT (Gtdt != NULL);
+   ASSERT (Gtdt != NULL);
 
-  Status = GetEArmObjGenericTimerInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GenericTimerInfo,
-             NULL
-             );
-
-  if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: GTDT: Failed to get GenericTimerInfo. Status = %r\n",
-      Status
-      ));
-    return Status;
-  }
+   Status = CfgMgrGetSimpleObject (
+     EArmObjGenericTimerInfo, (VOID **)&GenericTimerInfo);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
 
   Gtdt->CntControlBasePhysicalAddress =
     GenericTimerInfo->CounterControlBaseAddress;
@@ -140,7 +89,9 @@ AddGenericTimerInfo (
     Gtdt->VirtualPL2TimerFlags = GenericTimerInfo->VirtualPL2TimerFlags;
   }
 
-  return Status;
+  FreePool (GenericTimerInfo);
+
+  return EFI_SUCCESS;
 }
 
 /** Add the SBSA Generic Watchdog Timers to the GTDT table.
@@ -148,26 +99,36 @@ AddGenericTimerInfo (
   @param [in]  Gtdt             Pointer to the GTDT Table.
   @param [in]  WatchdogOffset   Offset to the watchdog information in the
                                 GTDT Table.
-  @param [in]  WatchdogInfoList Pointer to the watchdog information list.
-  @param [in]  WatchdogCount    Platform timer count.
 **/
 STATIC
 VOID
 AddGenericWatchdogList (
   IN EFI_ACPI_6_3_GENERIC_TIMER_DESCRIPTION_TABLE  * CONST Gtdt,
-  IN CONST UINT32                                          WatchdogOffset,
-  IN CONST CM_ARM_GENERIC_WATCHDOG_INFO            *       WatchdogInfoList,
-  IN       UINT32                                          WatchdogCount
+  IN CONST UINT32                                          WatchdogOffset
   )
 {
   EFI_ACPI_6_3_GTDT_SBSA_GENERIC_WATCHDOG_STRUCTURE  * Watchdog;
+  UINT32 WatchdogCount;
+  VOID *WatchdogInfoList;
+  CM_ARM_GENERIC_WATCHDOG_INFO *Cursor;
+  EFI_STATUS Status;
 
   ASSERT (Gtdt != NULL);
-  ASSERT (WatchdogInfoList != NULL);
+
+  Status = CfgMgrGetObjects (
+    EArmObjPlatformGenericWatchdogInfo,
+    CM_NULL_TOKEN,
+    &WatchdogInfoList,
+    &WatchdogCount);
+
+  if (EFI_ERROR(Status)) {
+    return;
+  }
 
   Watchdog = (EFI_ACPI_6_3_GTDT_SBSA_GENERIC_WATCHDOG_STRUCTURE *)
              ((UINT8*)Gtdt + WatchdogOffset);
 
+  Cursor = WatchdogInfoList;
   while (WatchdogCount-- != 0) {
     // Add watchdog entry
     DEBUG ((DEBUG_INFO, "GTDT: Watchdog = 0x%p\n", Watchdog));
@@ -176,14 +137,16 @@ AddGenericWatchdogList (
       sizeof (EFI_ACPI_6_3_GTDT_SBSA_GENERIC_WATCHDOG_STRUCTURE);
     Watchdog->Reserved = EFI_ACPI_RESERVED_BYTE;
     Watchdog->RefreshFramePhysicalAddress =
-      WatchdogInfoList->RefreshFrameAddress;
+      Cursor->RefreshFrameAddress;
     Watchdog->WatchdogControlFramePhysicalAddress =
-      WatchdogInfoList->ControlFrameAddress;
-    Watchdog->WatchdogTimerGSIV = WatchdogInfoList->TimerGSIV;
-    Watchdog->WatchdogTimerFlags = WatchdogInfoList->Flags;
+      Cursor->ControlFrameAddress;
+    Watchdog->WatchdogTimerGSIV = Cursor->TimerGSIV;
+    Watchdog->WatchdogTimerFlags = Cursor->Flags;
     Watchdog++;
-    WatchdogInfoList++;
+    Cursor++;
   } // for
+
+  FreePool (WatchdogInfoList);
 }
 
 /**
@@ -313,8 +276,6 @@ AddGTBlockTimerFrames (
 
 /** Add the GT Block Timers in the GTDT Table.
 
-  @param [in]  CfgMgrProtocol   Pointer to the Configuration Manager
-                                Protocol Interface.
   @param [in]  Gtdt             Pointer to the GTDT Table.
   @param [in]  GTBlockOffset    Offset of the GT Block
                                 information in the GTDT Table.
@@ -328,7 +289,6 @@ AddGTBlockTimerFrames (
 STATIC
 EFI_STATUS
 AddGTBlockList (
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL     * CONST CfgMgrProtocol,
   IN EFI_ACPI_6_3_GENERIC_TIMER_DESCRIPTION_TABLE    * CONST Gtdt,
   IN CONST UINT32                                            GTBlockOffset,
   IN CONST CM_ARM_GTBLOCK_INFO                       *       GTBlockInfo,
@@ -351,12 +311,11 @@ AddGTBlockList (
   while (BlockTimerCount-- != 0) {
     DEBUG ((DEBUG_INFO, "GTDT: GTBlock = 0x%p\n", GTBlock));
 
-    Status = GetEArmObjGTBlockTimerFrameInfo (
-               CfgMgrProtocol,
-               GTBlockInfo->GTBlockTimerFrameToken,
-               &GTBlockTimerFrameList,
-               &GTBlockTimerFrameCount
-               );
+    Status = CfgMgrGetObjects (
+      EArmObjGTBlockTimerFrameInfo,
+      GTBlockInfo->GTBlockTimerFrameToken,
+      NULL,
+      &GTBlockTimerFrameCount);
     if (EFI_ERROR (Status) ||
         (GTBlockTimerFrameCount != GTBlockInfo->GTBlockTimerFrameCount)) {
       DEBUG ((
@@ -397,18 +356,20 @@ AddGTBlockList (
     GtBlockFrame = (EFI_ACPI_6_3_GTDT_GT_BLOCK_TIMER_STRUCTURE*)
       ((UINT8*)GTBlock + GTBlock->GTBlockTimerOffset);
 
+    CfgMgrGetObjects (
+      EArmObjGTBlockTimerFrameInfo,
+      GTBlockInfo->GTBlockTimerFrameToken,
+      (VOID **)&GTBlockTimerFrameList,
+      &GTBlockTimerFrameCount);
+
     // Add GT Block Timer frames
     Status = AddGTBlockTimerFrames (
                GtBlockFrame,
                GTBlockTimerFrameList,
                GTBlockTimerFrameCount
                );
+    FreePool (GTBlockTimerFrameList);
     if (EFI_ERROR (Status)) {
-      DEBUG ((
-        DEBUG_ERROR,
-        "ERROR: GTDT: Failed to add Generic Timer Frames. Status = %r\n",
-        Status
-        ));
       return Status;
     }
 
@@ -458,7 +419,6 @@ BuildGtdtTable (
   UINT32                                          PlatformTimerCount;
   UINT32                                          WatchdogCount;
   UINT32                                          BlockTimerCount;
-  CM_ARM_GENERIC_WATCHDOG_INFO                  * WatchdogInfoList;
   CM_ARM_GTBLOCK_INFO                           * GTBlockInfo;
   EFI_ACPI_6_3_GENERIC_TIMER_DESCRIPTION_TABLE  * Gtdt;
   UINT32                                          Idx;
@@ -467,7 +427,6 @@ BuildGtdtTable (
 
   ASSERT (This != NULL);
   ASSERT (AcpiTableInfo != NULL);
-  ASSERT (CfgMgrProtocol != NULL);
   ASSERT (Table != NULL);
   ASSERT (AcpiTableInfo->TableGeneratorId == This->GeneratorID);
   ASSERT (AcpiTableInfo->AcpiTableSignature == This->AcpiTableSignature);
@@ -485,45 +444,14 @@ BuildGtdtTable (
     return EFI_INVALID_PARAMETER;
   }
 
-  *Table = NULL;
-  Status = GetEArmObjPlatformGTBlockInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GTBlockInfo,
-             &BlockTimerCount
-             );
+  Status = CfgMgrGetObjects (
+    EArmObjPlatformGTBlockInfo,
+    CM_NULL_TOKEN,
+    (VOID **)&GTBlockInfo,
+    &BlockTimerCount);
   if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: GTDT: Failed to Get Platform GT Block Information." \
-      " Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
-
-  Status = GetEArmObjPlatformGenericWatchdogInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &WatchdogInfoList,
-             &WatchdogCount
-             );
-  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: GTDT: Failed to Get Platform Generic Watchdog Information." \
-      " Status = %r\n",
-      Status
-      ));
-    goto error_handler;
-  }
-
-  DEBUG ((
-    DEBUG_INFO,
-    "GTDT: BlockTimerCount = %d, WatchdogCount = %d\n",
-    BlockTimerCount,
-    WatchdogCount
-    ));
 
   // Calculate the GTDT Table Size
   PlatformTimerCount = 0;
@@ -558,6 +486,20 @@ BuildGtdtTable (
       ));
   }
 
+  WatchdogCount = 0;
+  Status = CfgMgrCountObjects (
+    EArmObjPlatformGenericWatchdogInfo, &WatchdogCount);
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    goto error_handler;
+  }
+
+  DEBUG ((
+    DEBUG_INFO,
+    "GTDT: BlockTimerCount = %d, WatchdogCount = %d\n",
+    BlockTimerCount,
+    WatchdogCount
+    ));
+
   WatchdogOffset = 0;
   if (WatchdogCount != 0) {
     WatchdogOffset = TableSize;
@@ -572,20 +514,12 @@ BuildGtdtTable (
       ));
   }
 
-  *Table = (EFI_ACPI_DESCRIPTION_HEADER*)AllocateZeroPool (TableSize);
-  if (*Table == NULL) {
+  Gtdt = AllocateZeroPool (TableSize);
+  if (Gtdt == NULL) {
     Status = EFI_OUT_OF_RESOURCES;
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: GTDT: Failed to allocate memory for GTDT Table, Size = %d," \
-      " Status = %r\n",
-      TableSize,
-      Status
-      ));
     goto error_handler;
   }
 
-  Gtdt = (EFI_ACPI_6_3_GENERIC_TIMER_DESCRIPTION_TABLE*)*Table;
   DEBUG ((
     DEBUG_INFO,
     "GTDT: Gtdt = 0x%p TableSize = 0x%x\n",
@@ -595,20 +529,11 @@ BuildGtdtTable (
 
   Status = AddAcpiHeader (This, &Gtdt->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: GTDT: Failed to add ACPI header. Status = %r\n",
-      Status
-      ));
     goto error_handler;
   }
 
   Status = AddGenericTimerInfo (
-             CfgMgrProtocol,
-             Gtdt,
-             PlatformTimerCount,
-             AcpiTableInfo->AcpiTableRevision
-             );
+    Gtdt, PlatformTimerCount, AcpiTableInfo->AcpiTableRevision);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
@@ -619,13 +544,7 @@ BuildGtdtTable (
   }
 
   if (BlockTimerCount != 0) {
-    Status = AddGTBlockList (
-               CfgMgrProtocol,
-               Gtdt,
-               GTBlockOffset,
-               GTBlockInfo,
-               BlockTimerCount
-               );
+    Status = AddGTBlockList (Gtdt, GTBlockOffset, GTBlockInfo, BlockTimerCount);
     if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_ERROR,
@@ -637,21 +556,19 @@ BuildGtdtTable (
   }
 
   if (WatchdogCount != 0) {
-    AddGenericWatchdogList (
-      Gtdt,
-      WatchdogOffset,
-      WatchdogInfoList,
-      WatchdogCount
-      );
+    AddGenericWatchdogList (Gtdt, WatchdogOffset);
   }
 
+  FreePool (GTBlockInfo);
+
+  *Table = (EFI_ACPI_DESCRIPTION_HEADER *)Gtdt;
   return Status;
 
 error_handler:
-  if (*Table != NULL) {
-    FreePool (*Table);
-    *Table = NULL;
+  if (Gtdt != NULL) {
+    FreePool (Gtdt);
   }
+  FreePool (GTBlockInfo);
   return Status;
 }
 
@@ -677,7 +594,6 @@ FreeGtdtTableResources (
 {
   ASSERT (This != NULL);
   ASSERT (AcpiTableInfo != NULL);
-  ASSERT (CfgMgrProtocol != NULL);
   ASSERT (AcpiTableInfo->TableGeneratorId == This->GeneratorID);
   ASSERT (AcpiTableInfo->AcpiTableSignature == This->AcpiTableSignature);
 

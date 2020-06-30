@@ -17,7 +17,6 @@
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 
@@ -32,54 +31,6 @@ Requirements:
   - EArmObjGicRedistributorInfo (OPTIONAL)
   - EArmObjGicItsInfo (OPTIONAL)
 */
-
-/** This macro expands to a function that retrieves the GIC
-    CPU interface Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGicCInfo,
-  CM_ARM_GICC_INFO
-  );
-
-/** This macro expands to a function that retrieves the GIC
-    Distributor Information from the Configuration Manager.
-*/
-
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGicDInfo,
-  CM_ARM_GICD_INFO
-  );
-
-/** This macro expands to a function that retrieves the GIC
-    MSI Frame Information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGicMsiFrameInfo,
-  CM_ARM_GIC_MSI_FRAME_INFO
-  );
-
-/** This macro expands to a function that retrieves the GIC
-    Redistributor Information from the Configuration Manager.
-*/
-
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGicRedistributorInfo,
-  CM_ARM_GIC_REDIST_INFO
-  );
-
-/** This macro expands to a function that retrieves the GIC
-    Interrupt Translation Service Information from the
-    Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGicItsInfo,
-  CM_ARM_GIC_ITS_INFO
-  );
 
 /** This function updates the GIC CPU Interface Information in the
     EFI_ACPI_6_3_GIC_STRUCTURE structure.
@@ -215,15 +166,21 @@ STATIC
 EFI_STATUS
 AddGICCList (
   IN  EFI_ACPI_6_3_GIC_STRUCTURE  * Gicc,
-  IN  CONST CM_ARM_GICC_INFO      * GicCInfo,
-  IN        UINT32                  GicCCount,
   IN  CONST UINT8                   MadtRev
   )
 {
   BOOLEAN   IsAcpiProcUidDuplicated;
+  CM_ARM_GICC_INFO *Cursor;
+  VOID             *GicCInfo;
+  UINT32 GicCCount;
 
   ASSERT (Gicc != NULL);
-  ASSERT (GicCInfo != NULL);
+
+  EFI_STATUS Status =
+    CfgMgrGetObjects (EArmObjGicCInfo, CM_NULL_TOKEN, &GicCInfo, &GicCCount);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   IsAcpiProcUidDuplicated = FindDuplicateValue (
                               GicCInfo,
@@ -234,30 +191,39 @@ AddGICCList (
   // Duplicate ACPI Processor UID was found so the GICC info provided
   // is invalid
   if (IsAcpiProcUidDuplicated) {
+    FreePool (GicCInfo);
     return EFI_INVALID_PARAMETER;
   }
 
+  Cursor = GicCInfo;
   while (GicCCount-- != 0) {
-    AddGICC (Gicc++, GicCInfo++, MadtRev);
+    AddGICC (Gicc++, Cursor++, MadtRev);
   }
 
+  FreePool (GicCInfo);
   return EFI_SUCCESS;
 }
 
 /** Update the GIC Distributor Information in the MADT Table.
 
   @param [in]  Gicd      Pointer to GIC Distributor structure.
-  @param [in]  GicDInfo  Pointer to the GIC Distributor Information.
 **/
 STATIC
 VOID
 AddGICD (
-  EFI_ACPI_6_3_GIC_DISTRIBUTOR_STRUCTURE  * CONST Gicd,
-  CONST CM_ARM_GICD_INFO                  * CONST GicDInfo
-)
+  EFI_ACPI_6_3_GIC_DISTRIBUTOR_STRUCTURE  * CONST Gicd
+  )
 {
+  EFI_STATUS Status;
+  CM_ARM_GICD_INFO *GicDInfo;
+
   ASSERT (Gicd != NULL);
   ASSERT (GicDInfo != NULL);
+
+  Status = CfgMgrGetSimpleObject (EArmObjGicDInfo, (VOID **)&GicDInfo);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
 
   // UINT8 Type
   Gicd->Type = EFI_ACPI_6_3_GICD;
@@ -279,6 +245,8 @@ AddGICD (
   Gicd->Reserved2[0] = EFI_ACPI_RESERVED_BYTE;
   Gicd->Reserved2[1] = EFI_ACPI_RESERVED_BYTE;
   Gicd->Reserved2[2] = EFI_ACPI_RESERVED_BYTE;
+
+  FreePool (GicDInfo);
 }
 
 /** Update the GIC MSI Frame Information.
@@ -310,23 +278,32 @@ AddGICMsiFrame (
 /** Add the GIC MSI Frame Information to the MADT Table.
 
   @param [in]  GicMsiFrame      Pointer to GIC MSI Frame structure list.
-  @param [in]  GicMsiFrameInfo  Pointer to the GIC MSI Frame info list.
-  @param [in]  GicMsiFrameCount Count of GIC MSI Frames.
 **/
 STATIC
 VOID
 AddGICMsiFrameInfoList (
-  IN  EFI_ACPI_6_3_GIC_MSI_FRAME_STRUCTURE  * GicMsiFrame,
-  IN  CONST CM_ARM_GIC_MSI_FRAME_INFO       * GicMsiFrameInfo,
-  IN        UINT32                            GicMsiFrameCount
-)
+  IN  EFI_ACPI_6_3_GIC_MSI_FRAME_STRUCTURE  * GicMsiFrame
+  )
 {
-  ASSERT (GicMsiFrame != NULL);
-  ASSERT (GicMsiFrameInfo != NULL);
+  EFI_STATUS Status;
+  VOID                      *GicMsiInfo;
+  CM_ARM_GIC_MSI_FRAME_INFO *Cursor;
+  UINT32 GicMsiCount;
 
-  while (GicMsiFrameCount-- != 0) {
-    AddGICMsiFrame (GicMsiFrame++, GicMsiFrameInfo++);
+  ASSERT (GicMsiFrame != NULL);
+
+  Status = CfgMgrGetObjects (
+    EArmObjGicMsiFrameInfo, CM_NULL_TOKEN, &GicMsiInfo, &GicMsiCount);
+  if (EFI_ERROR(Status)) {
+    return;
   }
+
+  Cursor = GicMsiInfo;
+  while (GicMsiCount-- != 0) {
+    AddGICMsiFrame (GicMsiFrame++, Cursor++);
+  }
+
+  FreePool (GicMsiInfo);
 }
 
 /** Update the GIC Redistributor Information.
@@ -355,23 +332,32 @@ AddGICRedistributor (
 /** Add the GIC Redistributor Information to the MADT Table.
 
   @param [in]  Gicr      Pointer to GIC Redistributor structure list.
-  @param [in]  GicRInfo  Pointer to the GIC Distributor info list.
-  @param [in]  GicRCount Count of GIC Distributors.
 **/
 STATIC
 VOID
 AddGICRedistributorList (
-  IN  EFI_ACPI_6_3_GICR_STRUCTURE   * Gicr,
-  IN  CONST CM_ARM_GIC_REDIST_INFO  * GicRInfo,
-  IN        UINT32                    GicRCount
+  IN  EFI_ACPI_6_3_GICR_STRUCTURE   * Gicr
 )
 {
-  ASSERT (Gicr != NULL);
-  ASSERT (GicRInfo != NULL);
+  CM_ARM_GIC_REDIST_INFO *Cursor;
+  VOID                   *GicRInfo;
+  UINT32 GicRCount;
+  EFI_STATUS Status;
 
-  while (GicRCount-- != 0) {
-    AddGICRedistributor (Gicr++, GicRInfo++);
+  ASSERT (Gicr != NULL);
+
+  Status = CfgMgrGetObjects (
+    EArmObjGicRedistributorInfo, CM_NULL_TOKEN, &GicRInfo, &GicRCount);
+  if (EFI_ERROR (Status)) {
+    return;
   }
+
+  Cursor = GicRInfo;
+  while (GicRCount-- != 0) {
+    AddGICRedistributor (Gicr++, Cursor++);
+  }
+
+  FreePool (GicRInfo);
 }
 
 /** Update the GIC Interrupt Translation Service Information
@@ -401,23 +387,32 @@ AddGICInterruptTranslationService (
     to the MADT Table.
 
   @param [in]  GicIts       Pointer to GIC ITS structure list.
-  @param [in]  GicItsInfo   Pointer to the GIC ITS list.
-  @param [in]  GicItsCount  Count of GIC ITS.
 **/
 STATIC
 VOID
 AddGICItsList (
-  IN  EFI_ACPI_6_3_GIC_ITS_STRUCTURE  * GicIts,
-  IN  CONST CM_ARM_GIC_ITS_INFO       * GicItsInfo,
-  IN        UINT32                      GicItsCount
+  IN  EFI_ACPI_6_3_GIC_ITS_STRUCTURE  * GicIts
 )
 {
-  ASSERT (GicIts != NULL);
-  ASSERT (GicItsInfo != NULL);
+  CM_ARM_GIC_ITS_INFO *Cursor;
+  VOID                *GicItsInfo;
+  UINT32 GicItsCount;
+  EFI_STATUS Status;
 
-  while (GicItsCount-- != 0) {
-    AddGICInterruptTranslationService (GicIts++, GicItsInfo++);
+  ASSERT (GicIts != NULL);
+
+  Status = CfgMgrGetObjects (
+    EArmObjGicItsInfo, CM_NULL_TOKEN, &GicItsInfo, &GicItsCount);
+  if (EFI_ERROR(Status)) {
+    return;
   }
+
+  Cursor = GicItsInfo;
+  while (GicItsCount-- != 0) {
+    AddGICInterruptTranslationService (GicIts++, Cursor++);
+  }
+
+  FreePool (GicItsInfo);
 }
 
 /** Construct the MADT ACPI table.
@@ -454,16 +449,13 @@ BuildMadtTable (
 {
   EFI_STATUS                   Status;
   UINT32                       TableSize;
+
   UINT32                       GicCCount;
   UINT32                       GicDCount;
   UINT32                       GicMSICount;
   UINT32                       GicRedistCount;
   UINT32                       GicItsCount;
-  CM_ARM_GICC_INFO           * GicCInfo;
-  CM_ARM_GICD_INFO           * GicDInfo;
-  CM_ARM_GIC_MSI_FRAME_INFO  * GicMSIInfo;
-  CM_ARM_GIC_REDIST_INFO     * GicRedistInfo;
-  CM_ARM_GIC_ITS_INFO        * GicItsInfo;
+
   UINT32                       GicCOffset;
   UINT32                       GicDOffset;
   UINT32                       GicMSIOffset;
@@ -474,7 +466,6 @@ BuildMadtTable (
 
   ASSERT (This != NULL);
   ASSERT (AcpiTableInfo != NULL);
-  ASSERT (CfgMgrProtocol != NULL);
   ASSERT (Table != NULL);
   ASSERT (AcpiTableInfo->TableGeneratorId == This->GeneratorID);
   ASSERT (AcpiTableInfo->AcpiTableSignature == This->AcpiTableSignature);
@@ -492,21 +483,12 @@ BuildMadtTable (
     return EFI_INVALID_PARAMETER;
   }
 
+  // Allocated memory pointers
   *Table = NULL;
 
-  Status = GetEArmObjGicCInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GicCInfo,
-             &GicCCount
-             );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MADT: Failed to get GICC Info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+  Status = CfgMgrCountObjects (EArmObjGicCInfo, &GicCCount);
+  if (EFI_ERROR(Status)) {
+    return Status;
   }
 
   if (GicCCount == 0) {
@@ -515,23 +497,12 @@ BuildMadtTable (
       "ERROR: MADT: GIC CPU Interface information not provided.\n"
       ));
     ASSERT (GicCCount != 0);
-    Status = EFI_INVALID_PARAMETER;
-    goto error_handler;
+    return EFI_INVALID_PARAMETER;
   }
 
-  Status = GetEArmObjGicDInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GicDInfo,
-             &GicDCount
-             );
+  Status = CfgMgrCountObjects (EArmObjGicDInfo, &GicDCount);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MADT: Failed to get GICD Info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   if (GicDCount == 0) {
@@ -540,8 +511,7 @@ BuildMadtTable (
       "ERROR: MADT: GIC Distributor information not provided.\n"
       ));
     ASSERT (GicDCount != 0);
-    Status = EFI_INVALID_PARAMETER;
-    goto error_handler;
+    return EFI_INVALID_PARAMETER;
   }
 
   if (GicDCount > 1) {
@@ -552,53 +522,22 @@ BuildMadtTable (
       GicDCount
       ));
     ASSERT (GicDCount <= 1);
-    Status = EFI_INVALID_PARAMETER;
-    goto error_handler;
+    return EFI_INVALID_PARAMETER;
   }
 
-  Status = GetEArmObjGicMsiFrameInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GicMSIInfo,
-             &GicMSICount
-             );
+  Status = CfgMgrCountObjects (EArmObjGicMsiFrameInfo, &GicMSICount);
   if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MADT: Failed to get GIC MSI Info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
-  Status = GetEArmObjGicRedistributorInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GicRedistInfo,
-             &GicRedistCount
-             );
+  Status = CfgMgrCountObjects (EArmObjGicRedistributorInfo, &GicRedistCount);
   if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MADT: Failed to get GIC Redistributor Info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
-  Status = GetEArmObjGicItsInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GicItsInfo,
-             &GicItsCount
-             );
+  Status = CfgMgrCountObjects (EArmObjGicItsInfo, &GicItsCount);
   if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MADT: Failed to get GIC ITS Info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   TableSize = sizeof (EFI_ACPI_6_3_MULTIPLE_APIC_DESCRIPTION_TABLE_HEADER);
@@ -619,20 +558,10 @@ BuildMadtTable (
   TableSize += (sizeof (EFI_ACPI_6_3_GIC_ITS_STRUCTURE) * GicItsCount);
 
   // Allocate the Buffer for MADT table
-  *Table = (EFI_ACPI_DESCRIPTION_HEADER*)AllocateZeroPool (TableSize);
-  if (*Table == NULL) {
-    Status = EFI_OUT_OF_RESOURCES;
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MADT: Failed to allocate memory for MADT Table, Size = %d," \
-      " Status = %r\n",
-      TableSize,
-      Status
-      ));
-    goto error_handler;
+  Madt = AllocateZeroPool (TableSize);
+  if (Madt == NULL) {
+    return EFI_OUT_OF_RESOURCES;
   }
-
-  Madt = (EFI_ACPI_6_3_MULTIPLE_APIC_DESCRIPTION_TABLE_HEADER*)*Table;
 
   DEBUG ((
     DEBUG_INFO,
@@ -643,20 +572,13 @@ BuildMadtTable (
 
   Status = AddAcpiHeader (This, &Madt->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MADT: Failed to add ACPI header. Status = %r\n",
-      Status
-      ));
     goto error_handler;
   }
 
   Status = AddGICCList (
-    (EFI_ACPI_6_3_GIC_STRUCTURE*)((UINT8*)Madt + GicCOffset),
-    GicCInfo,
-    GicCCount,
-    Madt->Header.Revision
-    );
+    (EFI_ACPI_6_3_GIC_STRUCTURE *)((UINT8 *)Madt + GicCOffset),
+    Madt->Header.Revision);
+
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
@@ -666,42 +588,25 @@ BuildMadtTable (
     goto error_handler;
   }
 
-  AddGICD (
-    (EFI_ACPI_6_3_GIC_DISTRIBUTOR_STRUCTURE*)((UINT8*)Madt + GicDOffset),
-    GicDInfo
-    );
+  AddGICD ((VOID *)((UINT8 *)Madt + GicDOffset));
 
   if (GicMSICount != 0) {
-    AddGICMsiFrameInfoList (
-      (EFI_ACPI_6_3_GIC_MSI_FRAME_STRUCTURE*)((UINT8*)Madt + GicMSIOffset),
-      GicMSIInfo,
-      GicMSICount
-      );
+    AddGICMsiFrameInfoList ((VOID *)((UINT8 *)Madt + GicMSIOffset));
   }
 
   if (GicRedistCount != 0) {
-    AddGICRedistributorList (
-      (EFI_ACPI_6_3_GICR_STRUCTURE*)((UINT8*)Madt + GicRedistOffset),
-      GicRedistInfo,
-      GicRedistCount
-      );
+    AddGICRedistributorList ((VOID *)((UINT8 *)Madt + GicRedistOffset));
   }
 
   if (GicItsCount != 0) {
-    AddGICItsList (
-      (EFI_ACPI_6_3_GIC_ITS_STRUCTURE*)((UINT8*)Madt + GicItsOffset),
-      GicItsInfo,
-      GicItsCount
-      );
+    AddGICItsList ((VOID *)((UINT8 *)Madt + GicItsOffset));
   }
 
+  *Table = (EFI_ACPI_DESCRIPTION_HEADER*)Madt;
   return EFI_SUCCESS;
 
 error_handler:
-  if (*Table != NULL) {
-    FreePool (*Table);
-    *Table = NULL;
-  }
+  FreePool (Madt);
   return Status;
 }
 
@@ -727,7 +632,6 @@ FreeMadtTableResources (
 {
   ASSERT (This != NULL);
   ASSERT (AcpiTableInfo != NULL);
-  ASSERT (CfgMgrProtocol != NULL);
   ASSERT (AcpiTableInfo->TableGeneratorId == This->GeneratorID);
   ASSERT (AcpiTableInfo->AcpiTableSignature == This->AcpiTableSignature);
 

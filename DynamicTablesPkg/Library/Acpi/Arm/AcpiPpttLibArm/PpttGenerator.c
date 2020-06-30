@@ -21,7 +21,6 @@
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 
@@ -38,56 +37,6 @@
     - EArmObjCmRef
     - EArmObjGicCInfo (REQUIRED)
 */
-
-/**
-  This macro expands to a function that retrieves the Processor Hierarchy
-  information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjProcHierarchyInfo,
-  CM_ARM_PROC_HIERARCHY_INFO
-  );
-
-/**
-  This macro expands to a function that retrieves the cache information
-  from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjCacheInfo,
-  CM_ARM_CACHE_INFO
-  );
-
-/**
-  This macro expands to a function that retrieves the ID information for
-  Processor Hierarchy Nodes from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjProcNodeIdInfo,
-  CM_ARM_PROC_NODE_ID_INFO
-  );
-
-/**
-  This macro expands to a function that retrieves the cross-CM-object-
-  reference information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjCmRef,
-  CM_ARM_OBJ_REF
-  );
-
-/**
-  This macro expands to a function that retrieves the GIC CPU interface
-  information from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjGicCInfo,
-  CM_ARM_GICC_INFO
-  );
 
 /**
   Returns the size of the PPTT Processor Hierarchy Node (Type 0) given a
@@ -279,8 +228,6 @@ DetectCyclesInTopology (
   Update the array of private resources for a given Processor Hierarchy Node.
 
   @param [in]  Generator            Pointer to the PPTT Generator.
-  @param [in]  CfgMgrProtocol       Pointer to the Configuration Manager
-                                    Protocol Interface.
   @param [in]  PrivResArray         Pointer to the array of private resources.
   @param [in]  PrivResCount         Number of private resources.
   @param [in]  PrivResArrayToken    Reference Token for the CM_ARM_OBJ_REF
@@ -294,20 +241,19 @@ STATIC
 EFI_STATUS
 AddPrivateResources (
   IN  CONST ACPI_PPTT_GENERATOR                    * CONST Generator,
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL   * CONST CfgMgrProtocol,
   IN        UINT32                                 *       PrivResArray,
   IN        UINT32                                         PrivResCount,
   IN  CONST CM_OBJECT_TOKEN                                PrivResArrayToken
   )
 {
   EFI_STATUS            Status;
-  CM_ARM_OBJ_REF      * CmObjRefs;
+  CM_ARM_OBJ_REF      * Cursor;
+  VOID                * CmObjRefs;
   UINT32                CmObjRefCount;
   PPTT_NODE_INDEXER   * PpttNodeFound;
 
   ASSERT (
     (Generator != NULL) &&
-    (CfgMgrProtocol != NULL) &&
     (PrivResArray != NULL) &&
     (PrivResCount != 0)
     );
@@ -327,12 +273,8 @@ AddPrivateResources (
 
   CmObjRefCount = 0;
   // Get the CM Object References
-  Status = GetEArmObjCmRef (
-             CfgMgrProtocol,
-             PrivResArrayToken,
-             &CmObjRefs,
-             &CmObjRefCount
-             );
+  Status = CfgMgrGetObjects (
+    EArmObjCmRef, PrivResArrayToken, (VOID **)&CmObjRefs, &CmObjRefCount);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
@@ -356,11 +298,12 @@ AddPrivateResources (
       PrivResArrayToken,
       Status
       ));
-    return Status;
+    goto EXIT;
   }
 
+  Cursor = CmObjRefs;
   while (PrivResCount-- != 0) {
-    if (CmObjRefs->ReferenceToken == CM_NULL_TOKEN) {
+    if (Cursor->ReferenceToken == CM_NULL_TOKEN) {
       Status = EFI_INVALID_PARAMETER;
       DEBUG ((
         DEBUG_ERROR,
@@ -368,7 +311,7 @@ AddPrivateResources (
         "private resource. Status = %r\n",
         Status
         ));
-      return Status;
+      goto EXIT;
     }
 
     // The Node indexer has the Processor hierarchy nodes at the begining
@@ -378,7 +321,7 @@ AddPrivateResources (
                Generator->CacheStructIndexedList,
                (Generator->ProcTopologyStructCount -
                 Generator->ProcHierarchyNodeCount),
-               CmObjRefs->ReferenceToken,
+               Cursor->ReferenceToken,
                &PpttNodeFound
                );
     if (EFI_ERROR (Status)) {
@@ -386,19 +329,21 @@ AddPrivateResources (
         DEBUG_ERROR,
         "ERROR: PPTT: Failed to get a private resource with Token = %p from " \
         "Node Indexer. Status = %r\n",
-        CmObjRefs->ReferenceToken,
+        Cursor->ReferenceToken,
         Status
         ));
-      return Status;
+      goto EXIT;
     }
 
     // Update the offset of the private resources in the Processor
     // Hierarchy Node structure
     *(PrivResArray++) = PpttNodeFound->Offset;
-    CmObjRefs++;
+    Cursor++;
   }
 
-  return EFI_SUCCESS;
+EXIT:
+  FreePool (CmObjRefs);
+  return Status;
 }
 
 /**
@@ -485,7 +430,6 @@ STATIC
 EFI_STATUS
 AddProcHierarchyNodes (
   IN  CONST ACPI_PPTT_GENERATOR                   * CONST Generator,
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol,
   IN  CONST EFI_ACPI_6_3_PROCESSOR_PROPERTIES_TOPOLOGY_TABLE_HEADER * Pptt,
   IN  CONST UINT32                                        NodesStartOffset
   )
@@ -508,7 +452,6 @@ AddProcHierarchyNodes (
 
   ASSERT (
     (Generator != NULL) &&
-    (CfgMgrProtocol != NULL) &&
     (Pptt != NULL)
     );
 
@@ -532,6 +475,9 @@ AddProcHierarchyNodes (
   }
 
   UniqueGicCRefCount = 0;
+
+  // Pointers to allocated memory
+  GicCInfoList = NULL;
 
   while (NodeCount-- != 0) {
     ProcInfoNode = (CM_ARM_PROC_HIERARCHY_INFO*)ProcNodeIterator->Object;
@@ -632,12 +578,11 @@ AddProcHierarchyNodes (
         ));
       return Status;
     } else {
-      Status = GetEArmObjGicCInfo (
-                 CfgMgrProtocol,
-                 ProcInfoNode->GicCToken,
-                 &GicCInfoList,
-                 &GicCInfoCount
-                 );
+      Status = CfgMgrGetObjects (
+        EArmObjGicCInfo,
+        ProcInfoNode->GicCToken,
+        (VOID **)&GicCInfoList,
+        &GicCInfoCount);
       if (EFI_ERROR (Status)) {
         DEBUG ((
           DEBUG_ERROR,
@@ -664,6 +609,7 @@ AddProcHierarchyNodes (
           ProcInfoNode->Token,
           Status
           ));
+        FreePool (GicCInfoList);
         return Status;
       }
 
@@ -673,6 +619,7 @@ AddProcHierarchyNodes (
       // Increment the reference count for the number of
       // Unique GICC objects that were retrieved.
       UniqueGicCRefCount++;
+      FreePool (GicCInfoList);
     }
 
     ProcStruct->NumberOfPrivateResources = ProcInfoNode->NoOfPrivateResources;
@@ -683,7 +630,6 @@ AddProcHierarchyNodes (
       // Populate the private resources array
       Status = AddPrivateResources (
                   Generator,
-                  CfgMgrProtocol,
                   PrivateResources,
                   ProcStruct->NumberOfPrivateResources,
                   ProcInfoNode->PrivateResourcesArrayToken
@@ -707,18 +653,8 @@ AddProcHierarchyNodes (
 
   // Knowing the total number of GICC references made and that all GICC Token
   // references are unique, we can test if no GICC instances have been left out.
-  Status = GetEArmObjGicCInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &GicCInfoList,
-             &GicCInfoCount
-             );
+  Status = CfgMgrCountObjects (EArmObjGicCInfo, &GicCInfoCount);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: PPTT: Failed to get GICC Info. Status = %r\n",
-      Status
-      ));
     return Status;
   }
 
@@ -749,8 +685,6 @@ AddProcHierarchyNodes (
   the Configuration Manager and adds this information to the PPTT table.
 
   @param [in]  Generator            Pointer to the PPTT Generator.
-  @param [in]  CfgMgrProtocol       Pointer to the Configuration Manager
-                                    Protocol Interface.
   @param [in]  Pptt                 Pointer to PPTT table structure.
   @param [in]  NodesStartOffset     Offset from the start of PPTT table to the
                                     start of Cache Type Structures.
@@ -763,7 +697,6 @@ STATIC
 EFI_STATUS
 AddCacheTypeStructures (
   IN  CONST ACPI_PPTT_GENERATOR                   * CONST Generator,
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol,
   IN  CONST EFI_ACPI_6_3_PROCESSOR_PROPERTIES_TOPOLOGY_TABLE_HEADER * Pptt,
   IN  CONST UINT32                                        NodesStartOffset
   )
@@ -775,11 +708,8 @@ AddCacheTypeStructures (
   PPTT_NODE_INDEXER                   * CacheNodeIterator;
   UINT32                                NodeCount;
 
-  ASSERT (
-    (Generator != NULL) &&
-    (CfgMgrProtocol != NULL) &&
-    (Pptt != NULL)
-    );
+  ASSERT (Generator != NULL);
+  ASSERT (Pptt != NULL);
 
   CacheStruct = (EFI_ACPI_6_3_PPTT_STRUCTURE_CACHE*)((UINT8*)Pptt +
                  NodesStartOffset);
@@ -971,8 +901,6 @@ AddCacheTypeStructures (
   the Configuration Manager and and adds this information to the PPTT table.
 
   @param [in]  Generator          Pointer to the PPTT Generator.
-  @param [in]  CfgMgrProtocol     Pointer to the Configuration Manager
-                                  Protocol Interface.
   @param [in]  Pptt               Pointer to PPTT table structure.
   @param [in]  NodesStartOffset   Offset from the start of PPTT table to the
                                   start of ID Type Structures.
@@ -985,7 +913,6 @@ STATIC
 EFI_STATUS
 AddIdTypeStructures (
   IN  CONST ACPI_PPTT_GENERATOR                   * CONST Generator,
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol,
   IN  CONST EFI_ACPI_6_3_PROCESSOR_PROPERTIES_TOPOLOGY_TABLE_HEADER * Pptt,
   IN  CONST UINT32                                        NodesStartOffset
   )
@@ -998,7 +925,6 @@ AddIdTypeStructures (
 
   ASSERT (
     (Generator != NULL) &&
-    (CfgMgrProtocol != NULL) &&
     (Pptt != NULL)
     );
 
@@ -1074,10 +1000,7 @@ BuildPpttTable (
   UINT32                          CacheStructOffset;
   UINT32                          IdStructOffset;
 
-  CM_ARM_PROC_HIERARCHY_INFO    * ProcHierarchyNodeList;
-  CM_ARM_CACHE_INFO             * CacheStructList;
-  CM_ARM_PROC_NODE_ID_INFO      * IdStructList;
-
+  VOID                          * NodeList;
   ACPI_PPTT_GENERATOR           * Generator;
 
   // Pointer to the Node Indexer array
@@ -1088,7 +1011,6 @@ BuildPpttTable (
   ASSERT (
     (This != NULL) &&
     (AcpiTableInfo != NULL) &&
-    (CfgMgrProtocol != NULL) &&
     (Table != NULL) &&
     (AcpiTableInfo->TableGeneratorId == This->GeneratorID) &&
     (AcpiTableInfo->AcpiTableSignature == This->AcpiTableSignature)
@@ -1108,23 +1030,12 @@ BuildPpttTable (
   }
 
   Generator = (ACPI_PPTT_GENERATOR*)This;
-  *Table = NULL;
 
   // Get the processor hierarchy info and update the processor topology
   // structure count with Processor Hierarchy Nodes (Type 0)
-  Status = GetEArmObjProcHierarchyInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &ProcHierarchyNodeList,
-             &ProcHierarchyNodeCount
-             );
+  Status = CfgMgrCountObjects (EArmObjProcHierarchyInfo, &ProcHierarchyNodeCount);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: PPTT: Failed to get processor hierarchy info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   ProcTopologyStructCount = ProcHierarchyNodeCount;
@@ -1132,19 +1043,9 @@ BuildPpttTable (
 
   // Get the cache info and update the processor topology structure count with
   // Cache Type Structures (Type 1)
-  Status = GetEArmObjCacheInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &CacheStructList,
-             &CacheStructCount
-             );
+  Status = CfgMgrCountObjects (EArmObjCacheInfo, &CacheStructCount);
   if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: PPTT: Failed to get cache info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   ProcTopologyStructCount += CacheStructCount;
@@ -1152,38 +1053,18 @@ BuildPpttTable (
 
   // Get the processor hierarchy node ID info and update the processor topology
   // structure count with ID Structures (Type 2)
-  Status = GetEArmObjProcNodeIdInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &IdStructList,
-             &IdStructCount
-             );
+  Status = CfgMgrCountObjects (EArmObjProcNodeIdInfo, &IdStructCount);
   if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: PPTT: Failed to get processor hierarchy node ID info. " \
-      "Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   ProcTopologyStructCount += IdStructCount;
   Generator->IdStructCount = IdStructCount;
 
   // Allocate Node Indexer array
-  NodeIndexer = (PPTT_NODE_INDEXER*)AllocateZeroPool (
-                                      sizeof (PPTT_NODE_INDEXER) *
-                                      ProcTopologyStructCount
-                                      );
+  NodeIndexer = AllocateZeroPool (sizeof (PPTT_NODE_INDEXER) * ProcTopologyStructCount);
   if (NodeIndexer == NULL) {
-    Status = EFI_OUT_OF_RESOURCES;
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: PPTT: Failed to allocate memory for Node Indexer. Status = %r\n ",
-      Status
-      ));
-    goto error_handler;
+    return EFI_OUT_OF_RESOURCES;
   }
 
   DEBUG ((DEBUG_INFO, "INFO: NodeIndexer = %p\n", NodeIndexer));
@@ -1197,12 +1078,14 @@ BuildPpttTable (
   if (Generator->ProcHierarchyNodeCount != 0) {
     ProcHierarchyNodeOffset = TableSize;
     Generator->ProcHierarchyNodeIndexedList = NodeIndexer;
+
+    CfgMgrGetSimpleObject(EArmObjProcHierarchyInfo, &NodeList);
     TableSize += GetSizeofProcHierarchyNodes (
-                   ProcHierarchyNodeOffset,
-                   ProcHierarchyNodeList,
-                   Generator->ProcHierarchyNodeCount,
-                   &NodeIndexer
-                   );
+      ProcHierarchyNodeOffset,
+      NodeList,
+      Generator->ProcHierarchyNodeCount,
+      &NodeIndexer);
+    FreePool (NodeList);
 
     DEBUG ((
       DEBUG_INFO,
@@ -1220,33 +1103,32 @@ BuildPpttTable (
   if (Generator->CacheStructCount != 0) {
     CacheStructOffset = TableSize;
     Generator->CacheStructIndexedList = NodeIndexer;
+
+    CfgMgrGetSimpleObject(EArmObjCacheInfo, &NodeList);
     TableSize += GetSizeofCacheTypeStructs (
-                   CacheStructOffset,
-                   CacheStructList,
-                   Generator->CacheStructCount,
-                   &NodeIndexer
-                   );
-    DEBUG ((
-      DEBUG_INFO,
-      " CacheStructCount = %d\n" \
-      " CacheStructOffset = 0x%x\n" \
-      " CacheStructIndexedList = 0x%p\n",
-      Generator->CacheStructCount,
-      CacheStructOffset,
-      Generator->CacheStructIndexedList
-      ));
+      CacheStructOffset, NodeList, Generator->CacheStructCount, &NodeIndexer);
+    FreePool (NodeList);
+
+    DEBUG (
+      (DEBUG_INFO,
+       " CacheStructCount = %d\n"
+       " CacheStructOffset = 0x%x\n"
+       " CacheStructIndexedList = 0x%p\n",
+       Generator->CacheStructCount,
+       CacheStructOffset,
+       Generator->CacheStructIndexedList));
   }
 
   // Include the size of ID Type Structures and index them
   if (Generator->IdStructCount != 0) {
     IdStructOffset = TableSize;
     Generator->IdStructIndexedList = NodeIndexer;
+
+    CfgMgrGetSimpleObject (EArmObjProcNodeIdInfo, &NodeList);
     TableSize += GetSizeofIdStructs (
-                   IdStructOffset,
-                   IdStructList,
-                   Generator->IdStructCount,
-                   &NodeIndexer
-                   );
+      IdStructOffset, NodeList, Generator->IdStructCount, &NodeIndexer);
+    FreePool (NodeList);
+
     DEBUG ((
       DEBUG_INFO,
       " IdStructCount = %d\n" \
@@ -1268,20 +1150,11 @@ BuildPpttTable (
     ));
 
   // Allocate the Buffer for the PPTT table
-  *Table = (EFI_ACPI_DESCRIPTION_HEADER*)AllocateZeroPool (TableSize);
-  if (*Table == NULL) {
+  Pptt = AllocateZeroPool (TableSize);
+  if (Pptt == NULL) {
     Status = EFI_OUT_OF_RESOURCES;
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: PPTT: Failed to allocate memory for PPTT Table. " \
-      "Size = %d. Status = %r\n",
-      TableSize,
-      Status
-      ));
     goto error_handler;
   }
-
-  Pptt = (EFI_ACPI_6_3_PROCESSOR_PROPERTIES_TOPOLOGY_TABLE_HEADER*)*Table;
 
   DEBUG ((
     DEBUG_INFO,
@@ -1293,22 +1166,12 @@ BuildPpttTable (
   // Add ACPI header
   Status = AddAcpiHeader (This, &Pptt->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: PPTT: Failed to add ACPI header. Status = %r\n",
-      Status
-      ));
     goto error_handler;
   }
 
   // Add Processor Hierarchy Nodes (Type 0) to the generated table
   if (Generator->ProcHierarchyNodeCount != 0) {
-    Status = AddProcHierarchyNodes (
-               Generator,
-               CfgMgrProtocol,
-               Pptt,
-               ProcHierarchyNodeOffset
-               );
+    Status = AddProcHierarchyNodes (Generator, Pptt, ProcHierarchyNodeOffset);
     if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_ERROR,
@@ -1321,12 +1184,7 @@ BuildPpttTable (
 
   // Add Cache Type Structures (Type 1) to the generated table
   if (Generator->CacheStructCount != 0) {
-    Status = AddCacheTypeStructures (
-               Generator,
-               CfgMgrProtocol,
-               Pptt,
-               CacheStructOffset
-               );
+    Status = AddCacheTypeStructures (Generator, Pptt, CacheStructOffset);
     if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_ERROR,
@@ -1339,12 +1197,7 @@ BuildPpttTable (
 
   // Add ID Type Structures (Type 2) to the generated table
   if (Generator->IdStructCount != 0) {
-    Status = AddIdTypeStructures (
-               Generator,
-               CfgMgrProtocol,
-               Pptt,
-               IdStructOffset
-               );
+    Status = AddIdTypeStructures (Generator, Pptt, IdStructOffset);
     if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_ERROR,
@@ -1366,6 +1219,7 @@ BuildPpttTable (
     goto error_handler;
   }
 
+  *Table = (EFI_ACPI_DESCRIPTION_HEADER*)Pptt;
   return Status;
 
 error_handler:
@@ -1374,9 +1228,8 @@ error_handler:
     Generator->NodeIndexer = NULL;
   }
 
-  if (*Table != NULL) {
-    FreePool (*Table);
-    *Table = NULL;
+  if (Pptt != NULL) {
+    FreePool (Pptt);
   }
 
   return Status;

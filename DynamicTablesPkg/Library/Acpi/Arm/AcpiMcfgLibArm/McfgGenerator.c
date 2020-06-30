@@ -18,7 +18,6 @@
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 
@@ -48,50 +47,52 @@ typedef
 
 #pragma pack()
 
-/** Retrieve the PCI Configuration Space Information.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjPciConfigSpaceInfo,
-  CM_ARM_PCI_CONFIG_SPACE_INFO
-  );
-
 /** Add the PCI Enhanced Configuration Space Information to the MCFG Table.
 
   @param [in]  Mcfg                Pointer to MCFG Table.
   @param [in]  PciCfgSpaceOffset   Offset for the PCI Configuration Space
                                    Info structure in the MCFG Table.
-  @param [in]  PciCfgSpaceInfoList Pointer to the PCI Configuration Space
-                                   Info List.
-  @param [in]  PciCfgSpaceCount    Count of PCI Configuration Space Info.
 **/
 STATIC
 VOID
 AddPciConfigurationSpaceList (
   IN       MCFG_TABLE                   * CONST Mcfg,
-  IN CONST UINT32                               PciCfgSpaceOffset,
-  IN CONST CM_ARM_PCI_CONFIG_SPACE_INFO *       PciCfgSpaceInfoList,
-  IN       UINT32                               PciCfgSpaceCount
+  IN CONST UINT32                               PciCfgSpaceOffset
 )
 {
-  MCFG_CFG_SPACE_ADDR  * PciCfgSpace;
+  MCFG_CFG_SPACE_ADDR *PciCfgSpace;
+  CM_ARM_PCI_CONFIG_SPACE_INFO *Cursor;
+  VOID                         *PciCfgSpaceInfoList;
+  UINT32 PciCfgSpaceCount;
+  EFI_STATUS Status;
 
   ASSERT (Mcfg != NULL);
-  ASSERT (PciCfgSpaceInfoList != NULL);
+
+  Status = CfgMgrGetObjects (
+    EArmObjPciConfigSpaceInfo,
+    CM_NULL_TOKEN,
+    &PciCfgSpaceInfoList,
+    &PciCfgSpaceCount);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
 
   PciCfgSpace = (MCFG_CFG_SPACE_ADDR *)((UINT8*)Mcfg + PciCfgSpaceOffset);
 
+  Cursor = PciCfgSpaceInfoList;
   while (PciCfgSpaceCount-- != 0) {
     // Add PCI Configuration Space entry
-    PciCfgSpace->BaseAddress = PciCfgSpaceInfoList->BaseAddress;
+    PciCfgSpace->BaseAddress = Cursor->BaseAddress;
     PciCfgSpace->PciSegmentGroupNumber =
-      PciCfgSpaceInfoList->PciSegmentGroupNumber;
-    PciCfgSpace->StartBusNumber = PciCfgSpaceInfoList->StartBusNumber;
-    PciCfgSpace->EndBusNumber = PciCfgSpaceInfoList->EndBusNumber;
+      Cursor->PciSegmentGroupNumber;
+    PciCfgSpace->StartBusNumber = Cursor->StartBusNumber;
+    PciCfgSpace->EndBusNumber = Cursor->EndBusNumber;
     PciCfgSpace->Reserved = EFI_ACPI_RESERVED_DWORD;
     PciCfgSpace++;
-    PciCfgSpaceInfoList++;
+    Cursor++;
   }
+
+  FreePool (PciCfgSpaceInfoList);
 }
 
 /** Construct the MCFG ACPI table.
@@ -152,20 +153,14 @@ BuildMcfgTable (
     return EFI_INVALID_PARAMETER;
   }
 
+  // Pointers to allocated memory
   *Table = NULL;
-  Status = GetEArmObjPciConfigSpaceInfo (
-              CfgMgrProtocol,
-              CM_NULL_TOKEN,
-              &PciConfigSpaceInfoList,
-              &ConfigurationSpaceCount
-              );
+  PciConfigSpaceInfoList = NULL;
+
+  Status =
+    CfgMgrCountObjects (EArmObjPciConfigSpaceInfo, &ConfigurationSpaceCount);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR,
-      "ERROR: MCFG: Failed to get PCI Configuration Space Information." \
-      " Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   if (ConfigurationSpaceCount == 0) {
@@ -174,9 +169,8 @@ BuildMcfgTable (
       "ERROR: MCFG: Configuration Space Count = %d\n",
       ConfigurationSpaceCount
       ));
-    Status = EFI_INVALID_PARAMETER;
     ASSERT (ConfigurationSpaceCount != 0);
-    goto error_handler;
+    return EFI_INVALID_PARAMETER;
   }
 
   DEBUG ((
@@ -189,20 +183,11 @@ BuildMcfgTable (
   TableSize = sizeof (MCFG_TABLE) +
     ((sizeof (MCFG_CFG_SPACE_ADDR) * ConfigurationSpaceCount));
 
-  *Table = (EFI_ACPI_DESCRIPTION_HEADER*)AllocateZeroPool (TableSize);
-  if (*Table == NULL) {
-    Status = EFI_OUT_OF_RESOURCES;
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MCFG: Failed to allocate memory for MCFG Table, Size = %d," \
-      " Status = %r\n",
-      TableSize,
-      Status
-      ));
-    goto error_handler;
+  Mcfg = AllocateZeroPool (TableSize);
+  if (Mcfg == NULL) {
+    return EFI_OUT_OF_RESOURCES;
   }
 
-  Mcfg = (MCFG_TABLE*)*Table;
   DEBUG ((
     DEBUG_INFO,
     "MCFG: Mcfg = 0x%p TableSize = 0x%x\n",
@@ -212,30 +197,19 @@ BuildMcfgTable (
 
   Status = AddAcpiHeader (This, &Mcfg->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: MCFG: Failed to add ACPI header. Status = %r\n",
-      Status
-      ));
     goto error_handler;
   }
 
   Mcfg->Reserved = EFI_ACPI_RESERVED_QWORD;
 
-  AddPciConfigurationSpaceList (
-    Mcfg,
-    sizeof (MCFG_TABLE),
-    PciConfigSpaceInfoList,
-    ConfigurationSpaceCount
-    );
+  AddPciConfigurationSpaceList (Mcfg, sizeof (MCFG_TABLE));
+
+  *Table = (EFI_ACPI_DESCRIPTION_HEADER*) Mcfg;
 
   return EFI_SUCCESS;
 
 error_handler:
-  if (*Table != NULL) {
-    FreePool (*Table);
-    *Table = NULL;
-  }
+  FreePool (Mcfg);
   return Status;
 }
 

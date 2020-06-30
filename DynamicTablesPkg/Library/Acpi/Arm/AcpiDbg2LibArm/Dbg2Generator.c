@@ -12,6 +12,7 @@
 #include <IndustryStandard/DebugPort2Table.h>
 #include <Library/AcpiLib.h>
 #include <Library/DebugLib.h>
+#include <Library/MemoryAllocationLib.h>
 #include <Library/PL011UartLib.h>
 #include <Protocol/AcpiTable.h>
 #include <Protocol/SerialIo.h>
@@ -19,7 +20,6 @@
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 
@@ -166,15 +166,6 @@ DBG2_TABLE AcpiDbg2 = {
 
 #pragma pack()
 
-/** This macro expands to a function that retrieves the Serial
-    debug port information from the Configuration Manager
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceArm,
-  EArmObjSerialDebugPortInfo,
-  CM_ARM_SERIAL_PORT_INFO
-  );
-
 /** Initialize the PL011/SBSA UART with the parameters obtained from
     the Configuration Manager.
 
@@ -285,21 +276,14 @@ BuildDbg2Table (
     return EFI_INVALID_PARAMETER;
   }
 
+  // Pointers to allocated memory
   *Table = NULL;
 
-  Status = GetEArmObjSerialDebugPortInfo (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &SerialPortInfo,
-             NULL
-             );
+  Status = CfgMgrGetSimpleObject (
+    EArmObjSerialDebugPortInfo, (VOID **)&SerialPortInfo);
+
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: DBG2: Failed to get serial port information. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   if (SerialPortInfo->BaseAddress == 0) {
@@ -335,11 +319,6 @@ BuildDbg2Table (
     AcpiTableInfo,
     sizeof (DBG2_TABLE));
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: DBG2: Failed to add ACPI header. Status = %r\n",
-      Status
-      ));
     goto error_handler;
   }
 
@@ -372,6 +351,7 @@ BuildDbg2Table (
   *Table = (EFI_ACPI_DESCRIPTION_HEADER*)&AcpiDbg2;
 
 error_handler:
+  FreePool(SerialPortInfo);
   return Status;
 }
 

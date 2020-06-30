@@ -8,6 +8,7 @@
 **/
 
 #include <Library/DebugLib.h>
+#include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Protocol/AcpiTable.h>
@@ -15,21 +16,11 @@
 // Module specific include files.
 #include <AcpiTableGenerator.h>
 #include <ConfigurationManagerObject.h>
-#include <ConfigurationManagerHelper.h>
 #include <DeviceTreeTableGenerator.h>
 #include <Library/TableHelperLib.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 #include <Protocol/DynamicTableFactoryProtocol.h>
 #include <SmbiosTableGenerator.h>
-
-/** This macro expands to a function that retrieves the ACPI Table
-    List from the Configuration Manager.
-*/
-GET_OBJECT_LIST (
-  EObjNameSpaceStandard,
-  EStdObjAcpiTableList,
-  CM_STD_OBJ_ACPI_TABLE_INFO
-  )
 
 /** A helper function to build and install a single ACPI table.
 
@@ -516,12 +507,7 @@ ProcessAcpiTables (
     return Status;
   }
 
-  Status = GetEStdObjAcpiTableList (
-             CfgMgrProtocol,
-             CM_NULL_TOKEN,
-             &AcpiTableInfo,
-             &AcpiTableCount
-             );
+  Status = CfgMgrCountObjects (EStdObjAcpiTableList, &AcpiTableCount);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
@@ -546,6 +532,9 @@ ProcessAcpiTables (
     AcpiTableCount
     ));
 
+  CfgMgrGetObjects (
+    EStdObjAcpiTableList, CM_NULL_TOKEN, (VOID**)&AcpiTableInfo, &AcpiTableCount);
+
   // Check if mandatory ACPI tables are present.
   Status = VerifyMandatoryTablesArePresent (
              AcpiTableInfo,
@@ -558,7 +547,7 @@ ProcessAcpiTables (
       " Status = %r\n",
       Status
       ));
-    return Status;
+    goto EXIT;
   }
 
   // Add the FADT Table first.
@@ -578,7 +567,7 @@ ProcessAcpiTables (
           " Status = %r\n",
           Status
           ));
-        return Status;
+        goto EXIT;
       }
       break;
     }
@@ -626,10 +615,12 @@ ProcessAcpiTables (
         " Status = %r\n",
         Status
         ));
-      return Status;
+      goto EXIT;
     }
   } // for
 
+EXIT:
+  FreePool(AcpiTableInfo);
   return Status;
 }
 
@@ -697,11 +688,6 @@ DynamicTableManagerDxeInitialize (
 
   Status = CfgMgrGetInfo (&CfgMgrInfo);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: Failed to get Configuration Manager info. Status = %r\n",
-      Status
-      ));
     return Status;
   }
 
