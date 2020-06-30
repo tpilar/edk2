@@ -23,8 +23,14 @@
 
 [LibraryClasses]
   BaseLib
+  BaseMemoryLib
+  DebugLib
+  PrintLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
 
 [Protocols]
+  gEfiSerialIoProtocolGuid
 
 [Guids]
 
