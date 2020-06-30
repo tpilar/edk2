@@ -38,3 +38,9 @@
   #
   DynamicTablesPkg/Drivers/DynamicTableManagerDxe/DynamicTableManagerDxe.inf
 
+  #
+  # Dummy Component Libraries
+  #
+  DynamicTablesPkg/Drivers/ConfigurationManagerDxe/Components/Component1.inf
+  DynamicTablesPkg/Drivers/ConfigurationManagerDxe/Components/Component2.inf
+

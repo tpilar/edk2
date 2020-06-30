@@ -1,0 +1,45 @@
+## @file
+#  Component library that can be included into a Configuration Manager
+#
+#  Copyright (c) 2017 - 2020, ARM Limited. All rights reserved.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010019
+  BASE_NAME                      = Component1Lib
+  FILE_GUID                      = C608846F-0930-458C-AAE2-8DB4FE3C5F74
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = ComponentLib|DXE_DRIVER UEFI_DRIVER
+  ENTRY_POINT                    = ComponentLib1Init
+  CONSTRUCTOR                    = ComponentLib1Constructor
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = ARM AARCH64
+#
+
+[Sources]
+  Component1.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  DynamicTablesPkg/DynamicTablesPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  UefiLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  TableHelperLib
+
+[Protocols]
+  gEdkiiConfigurationManagerProtocolGuid        # PROTOCOL ALWAYS_CONSUMES
+
+[Depex]
+  TRUE
+
