@@ -85,6 +85,69 @@ InternalPrint (
 }
 
 /**
+  Print a formatted Unicosde string to the first serial device found
+  in the system that provides the SerialIo protocol.
+
+  If the length of the formatted Unicode string is greater than
+  PcdUefiLibMaxPrintBufferSize, then only the first PcdUefiLibMaxPrintBufferSize
+  characters are sent to the serial device.
+
+  If Format is NULL or not aligned on 16-bit boundary, then ASSERT().
+  If there is no SerialIo in the system, then ASSERT().
+
+  @param Format   A Null-terminated Unicode format string.
+  @param ...      A Variable argument list whose contents are accessed based
+                  on the format string specified by Format.
+
+  @return The number of Unicode characters printed to the serial device
+**/
+
+UINTN
+EFIAPI
+PrintSerial (
+  IN CONST CHAR16  *Format,
+  ...
+  )
+{
+  EFI_SERIAL_IO_PROTOCOL *SerialIo;
+  EFI_STATUS Status;
+  UINTN       Return;
+  CHAR16      *Buffer;
+  UINTN       BufferSize;
+  VA_LIST     Marker;
+
+  ASSERT (Format != NULL);
+  ASSERT (((UINTN) Format & BIT0) == 0);
+
+  SerialIo = NULL;
+  Status = gBS->LocateProtocol (
+    &gEfiSerialIoProtocolGuid,
+    NULL,
+    (VOID **) &SerialIo);
+  ASSERT (SerialIo != NULL);
+
+  if (EFI_ERROR(Status)) {
+    return 0;
+  }
+
+  BufferSize = (PcdGet32 (PcdUefiLibMaxPrintBufferSize) + 1) * sizeof (CHAR16);
+
+  Buffer = (CHAR16 *) AllocatePool(BufferSize);
+  ASSERT (Buffer != NULL);
+
+  VA_START(Marker, Format);
+  Return = UnicodeVSPrint (Buffer, BufferSize, Format, Marker);
+  VA_END(Marker);
+
+  BufferSize = StrnSizeS(Buffer, BufferSize);
+  SerialIo->Write(SerialIo, &BufferSize, Buffer);
+
+  FreePool(Buffer);
+
+  return Return;
+}
+
+/**
   Prints a formatted Unicode string to the console output device specified by
   ConOut defined in the EFI_SYSTEM_TABLE.
 

@@ -67,6 +67,7 @@
   gEfiGraphicsOutputProtocolGuid                  ## SOMETIMES_CONSUMES
   gEfiHiiFontProtocolGuid                         ## SOMETIMES_CONSUMES
   gEfiSimpleFileSystemProtocolGuid                ## SOMETIMES_CONSUMES
+  gEfiSerialIoProtocolGuid                        ## SOMETIMES_CONSUMES
   gEfiUgaDrawProtocolGuid | gEfiMdePkgTokenSpaceGuid.PcdUgaConsumeSupport                 ## SOMETIMES_CONSUMES # Consumes if gEfiGraphicsOutputProtocolGuid uninstalled
   gEfiComponentNameProtocolGuid  | NOT gEfiMdePkgTokenSpaceGuid.PcdComponentNameDisable   ## SOMETIMES_PRODUCES # User chooses to produce it
   gEfiComponentName2ProtocolGuid | NOT gEfiMdePkgTokenSpaceGuid.PcdComponentName2Disable  ## SOMETIMES_PRODUCES # User chooses to produce it
@@ -74,7 +75,6 @@
   gEfiDriverConfiguration2ProtocolGuid                           ## SOMETIMES_PRODUCES # User chooses to produce it
   gEfiDriverDiagnosticsProtocolGuid | NOT gEfiMdePkgTokenSpaceGuid.PcdDriverDiagnosticsDisable  ## SOMETIMES_PRODUCES # User chooses to produce it
   gEfiDriverDiagnostics2ProtocolGuid| NOT gEfiMdePkgTokenSpaceGuid.PcdDriverDiagnostics2Disable ## SOMETIMES_PRODUCES # User chooses to produce it
-
 
 [Pcd]
   gEfiMdePkgTokenSpaceGuid.PcdUefiLibMaxPrintBufferSize   ## SOMETIMES_CONSUMES

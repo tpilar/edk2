@@ -1122,6 +1122,31 @@ EfiGetNameGuidFromFwVolDevicePathNode (
   );
 
 /**
+  Print a formatted Unicosde string to the first serial device found
+  in the system that provides the SerialIo protocol.
+
+  If the length of the formatted Unicode string is greater than
+  PcdUefiLibMaxPrintBufferSize, then only the first PcdUefiLibMaxPrintBufferSize
+  characters are sent to the serial device.
+
+  If Format is NULL or not aligned on 16-bit boundary, then ASSERT().
+  If there is no SerialIo in the system, then ASSERT().
+
+  @param Format   A Null-terminated Unicode format string.
+  @param ...      A Variable argument list whose contents are accessed based
+                  on the format string specified by Format.
+
+  @return The number of Unicode characters printed to the serial device
+**/
+
+UINTN
+EFIAPI
+PrintSerial (
+  IN CONST CHAR16  *Format,
+  ...
+  );
+
+/**
   Prints a formatted Unicode string to the console output device specified by
   ConOut defined in the EFI_SYSTEM_TABLE.
 

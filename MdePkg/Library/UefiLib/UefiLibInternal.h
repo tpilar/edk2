@@ -21,6 +21,7 @@
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/UgaDraw.h>
 #include <Protocol/HiiFont.h>
+#include <Protocol/SerialIo.h>
 
 #include <Guid/EventGroup.h>
 #include <Guid/EventLegacyBios.h>
