@@ -319,11 +319,30 @@ ConfigurationManagerInit (
   )
 {
   EFI_STATUS Status = EFI_NOT_STARTED;
+  CM_STD_OBJ_CONFIGURATION_MANAGER_INFO CfgMgrInfo = {
+    .Revision = CREATE_REVISION(1, 1),
+    .OemId = { 0 },
+  };
+  EFI_TPL CurrentTpl;
+
+  // Lockout callbacks to prevent NULL libraries from populating
+  // the manager before we are ready.
+  CurrentTpl = gBS->RaiseTPL(TPL_NOTIFY);
 
   InitializeListHead(&ObjectList);
 
   Status = gBS->InstallMultipleProtocolInterfaces (
     &ImageHandle, &gEdkiiConfigurationManagerProtocolGuid, &CfgMgr, NULL);
+
+  CfgMgrAddObject (
+    EStdObjCfgMgrInfo,
+    CM_NULL_TOKEN,
+    &CfgMgrInfo,
+    sizeof (CfgMgrInfo));
+
+  if (CurrentTpl < TPL_NOTIFY) {
+    gBS->RestoreTPL(CurrentTpl);
+  }
 
   DescribeDb();
 
