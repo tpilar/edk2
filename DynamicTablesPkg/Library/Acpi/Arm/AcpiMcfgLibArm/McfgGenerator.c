@@ -210,13 +210,7 @@ BuildMcfgTable (
     TableSize
     ));
 
-  Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             &Mcfg->Header,
-             AcpiTableInfo,
-             TableSize
-             );
+  Status = AddAcpiHeader (This, &Mcfg->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,

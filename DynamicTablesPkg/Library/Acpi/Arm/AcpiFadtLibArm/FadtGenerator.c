@@ -528,19 +528,17 @@ BuildFadtTable (
   *Table = NULL;
 
   Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             (EFI_ACPI_DESCRIPTION_HEADER*)&AcpiFadt,
-             AcpiTableInfo,
-             sizeof (EFI_ACPI_6_3_FIXED_ACPI_DESCRIPTION_TABLE)
-             );
+    This,
+    (EFI_ACPI_DESCRIPTION_HEADER *)&AcpiFadt,
+    AcpiTableInfo,
+    sizeof (EFI_ACPI_6_3_FIXED_ACPI_DESCRIPTION_TABLE));
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
       "ERROR: FADT: Failed to add ACPI header. Status = %r\n",
       Status
       ));
-    goto error_handler;
+    return Status;
   }
 
   // Update PmProfile Info

@@ -1291,13 +1291,7 @@ BuildPpttTable (
     ));
 
   // Add ACPI header
-  Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             &Pptt->Header,
-             AcpiTableInfo,
-             TableSize
-             );
+  Status = AddAcpiHeader (This, &Pptt->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,

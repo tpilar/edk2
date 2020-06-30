@@ -1942,13 +1942,7 @@ BuildIortTable (
     TableSize
     ));
 
-  Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             &Iort->Header,
-             AcpiTableInfo,
-             (UINT32)TableSize
-             );
+  Status = AddAcpiHeader (This, &Iort->Header, AcpiTableInfo, (UINT32) TableSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,

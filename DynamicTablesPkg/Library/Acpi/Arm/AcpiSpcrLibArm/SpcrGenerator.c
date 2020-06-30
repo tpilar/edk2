@@ -202,12 +202,10 @@ BuildSpcrTable (
   DEBUG ((DEBUG_INFO, "  Interrupt  = %d\n", SerialPortInfo->Interrupt));
 
   Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             (EFI_ACPI_DESCRIPTION_HEADER*)&AcpiSpcr,
-             AcpiTableInfo,
-             sizeof (EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE)
-             );
+    This,
+    (EFI_ACPI_DESCRIPTION_HEADER *)&AcpiSpcr,
+    AcpiTableInfo,
+    sizeof (EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE));
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,

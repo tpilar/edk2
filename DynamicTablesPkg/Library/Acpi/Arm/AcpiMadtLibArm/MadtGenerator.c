@@ -641,13 +641,7 @@ BuildMadtTable (
     TableSize
     ));
 
-  Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             &Madt->Header,
-             AcpiTableInfo,
-             TableSize
-             );
+  Status = AddAcpiHeader (This, &Madt->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,

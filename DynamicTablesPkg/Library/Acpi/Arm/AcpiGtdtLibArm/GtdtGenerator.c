@@ -593,13 +593,7 @@ BuildGtdtTable (
     TableSize
     ));
 
-  Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             &Gtdt->Header,
-             AcpiTableInfo,
-             TableSize
-             );
+  Status = AddAcpiHeader (This, &Gtdt->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,

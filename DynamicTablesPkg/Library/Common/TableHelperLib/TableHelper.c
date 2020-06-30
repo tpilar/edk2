@@ -392,74 +392,30 @@ CfgMgrRemoveObject (
 }
 
 
-/** The GetCgfMgrInfo function gets the CM_STD_OBJ_CONFIGURATION_MANAGER_INFO
-    object from the Configuration Manager.
+/** The CfgMgrGetInfo function gets the CM_STD_OBJ_CONFIGURATION_MANAGER_INFO
+    object from the Configuration Manager. The caller is responsible for freeing
+    the memory allocated by this function.
 
-  @param [in]  CfgMgrProtocol Pointer to the Configuration Manager protocol
-                              interface.
-  @param [out] CfgMfrInfo     Pointer to the Configuration Manager Info
+  @param [out] CfgMgrInfo     Pointer to the Configuration Manager Info
                               object structure.
 
   @retval EFI_SUCCESS           The object is returned.
-  @retval EFI_INVALID_PARAMETER The Object ID is invalid.
   @retval EFI_NOT_FOUND         The requested Object is not found.
-  @retval EFI_BAD_BUFFER_SIZE   The size returned by the Configuration
-                                Manager is less than the Object size.
+  @retval EFI_INVALID_PARAMETER CfgMgrInfo is NULL.
 **/
 EFI_STATUS
 EFIAPI
-GetCgfMgrInfo (
-  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL      * CONST  CfgMgrProtocol,
-  OUT       CM_STD_OBJ_CONFIGURATION_MANAGER_INFO    **        CfgMfrInfo
+CfgMgrGetInfo (
+  OUT       CM_STD_OBJ_CONFIGURATION_MANAGER_INFO    **        CfgMgrInfo
   )
 {
-  EFI_STATUS         Status;
-  CM_OBJ_DESCRIPTOR  CmObjectDesc;
-
-  ASSERT (CfgMgrProtocol != NULL);
-  ASSERT (CfgMfrInfo != NULL);
-
-  *CfgMfrInfo = NULL;
-
-  Status = CfgMgrProtocol->GetObject (
-                             CfgMgrProtocol,
-                             CREATE_CM_STD_OBJECT_ID (EStdObjCfgMgrInfo),
-                             CM_NULL_TOKEN,
-                             &CmObjectDesc
-                             );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: Failed to Get Configuration Manager Info. Status = %r\n",
-      Status
-      ));
-    return Status;
-  }
-
-  if (CmObjectDesc.ObjectId != CREATE_CM_STD_OBJECT_ID (EStdObjCfgMgrInfo)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: EStdObjCfgMgrInfo: Invalid ObjectId = 0x%x, expected Id = 0x%x\n",
-      CmObjectDesc.ObjectId,
-      CREATE_CM_STD_OBJECT_ID (EStdObjCfgMgrInfo)
-      ));
-    ASSERT (FALSE);
+  if (CfgMgrInfo == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
-  if (CmObjectDesc.Size <
-      (sizeof (CM_STD_OBJ_CONFIGURATION_MANAGER_INFO) * CmObjectDesc.Count)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: EStdObjCfgMgrInfo: Buffer too small, size  = 0x%x\n",
-      CmObjectDesc.Size
-      ));
-    ASSERT (FALSE);
-    return EFI_BAD_BUFFER_SIZE;
-  }
+  *CfgMgrInfo = NULL;
 
-  *CfgMfrInfo = (CM_STD_OBJ_CONFIGURATION_MANAGER_INFO*)CmObjectDesc.Data;
-  return Status;
+  return CfgMgrGetSimpleObject (EStdObjCfgMgrInfo, (VOID **)CfgMgrInfo);
 }
 
 /** The AddAcpiHeader function updates the ACPI header structure pointed by
@@ -467,8 +423,6 @@ GetCgfMgrInfo (
     Manager protocol to obtain any information required for constructing the
     header.
 
-  @param [in]     CfgMgrProtocol Pointer to the Configuration Manager
-                                 protocol interface.
   @param [in]     Generator      Pointer to the ACPI table Generator.
   @param [in,out] AcpiHeader     Pointer to the ACPI table header to be
                                  updated.
@@ -478,14 +432,10 @@ GetCgfMgrInfo (
   @retval EFI_SUCCESS           The ACPI table is updated successfully.
   @retval EFI_INVALID_PARAMETER A parameter is invalid.
   @retval EFI_NOT_FOUND         The required object information is not found.
-  @retval EFI_BAD_BUFFER_SIZE   The size returned by the Configuration
-                                Manager is less than the Object size for the
-                                requested object.
 **/
 EFI_STATUS
 EFIAPI
 AddAcpiHeader (
-  IN      CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  * CONST CfgMgrProtocol,
   IN      CONST ACPI_TABLE_GENERATOR                  * CONST Generator,
   IN OUT  EFI_ACPI_DESCRIPTION_HEADER                 * CONST AcpiHeader,
   IN      CONST CM_STD_OBJ_ACPI_TABLE_INFO            * CONST AcpiTableInfo,
@@ -495,27 +445,17 @@ AddAcpiHeader (
   EFI_STATUS                               Status;
   CM_STD_OBJ_CONFIGURATION_MANAGER_INFO  * CfgMfrInfo;
 
-  ASSERT (CfgMgrProtocol != NULL);
-  ASSERT (Generator != NULL);
-  ASSERT (AcpiHeader != NULL);
-  ASSERT (Length >= sizeof (EFI_ACPI_DESCRIPTION_HEADER));
-
-  if ((CfgMgrProtocol == NULL) ||
-      (Generator == NULL) ||
+  if ((Generator == NULL) ||
       (AcpiHeader == NULL) ||
-      (Length < sizeof (EFI_ACPI_DESCRIPTION_HEADER))
-    ) {
+      (Length < sizeof (EFI_ACPI_DESCRIPTION_HEADER))) {
+    DEBUG ((DEBUG_ERROR,
+            "ERROR: Cannot add ACPI header [Invalid Pamrameter].\n"));
     return EFI_INVALID_PARAMETER;
   }
 
-  Status = GetCgfMgrInfo (CfgMgrProtocol, &CfgMfrInfo);
+  Status = CfgMgrGetInfo (&CfgMfrInfo);
   if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: Failed to get Configuration Manager info. Status = %r\n",
-      Status
-      ));
-    goto error_handler;
+    return Status;
   }
 
   // UINT32  Signature
@@ -555,8 +495,9 @@ AddAcpiHeader (
   // UINT32  CreatorRevision
   AcpiHeader->CreatorRevision = Generator->CreatorRevision;
 
-error_handler:
-  return Status;
+  FreePool (CfgMfrInfo);
+
+  return EFI_SUCCESS;
 }
 
 /**

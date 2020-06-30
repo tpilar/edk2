@@ -610,13 +610,7 @@ BuildSratTable (
     TableSize
     ));
 
-  Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             &Srat->Header,
-             AcpiTableInfo,
-             TableSize
-             );
+  Status = AddAcpiHeader (This, &Srat->Header, AcpiTableInfo, TableSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,

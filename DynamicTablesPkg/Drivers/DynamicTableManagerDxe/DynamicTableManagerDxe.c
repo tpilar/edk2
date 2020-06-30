@@ -661,7 +661,7 @@ DynamicTableManagerDxeInitialize (
 {
   EFI_STATUS                                 Status;
   EDKII_CONFIGURATION_MANAGER_PROTOCOL     * CfgMgrProtocol;
-  CM_STD_OBJ_CONFIGURATION_MANAGER_INFO    * CfgMfrInfo;
+  CM_STD_OBJ_CONFIGURATION_MANAGER_INFO    * CfgMgrInfo;
   EDKII_DYNAMIC_TABLE_FACTORY_PROTOCOL     * TableFactoryProtocol;
 
   // Locate the Dynamic Table Factory
@@ -695,7 +695,7 @@ DynamicTableManagerDxeInitialize (
     return Status;
   }
 
-  Status = GetCgfMgrInfo (CfgMgrProtocol, &CfgMfrInfo);
+  Status = CfgMgrGetInfo (&CfgMgrInfo);
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
@@ -708,14 +708,16 @@ DynamicTableManagerDxeInitialize (
   DEBUG ((
     DEBUG_INFO,
     "INFO: Configuration Manager Version = 0x%x, OemID = %c%c%c%c%c%c\n",
-    CfgMfrInfo->Revision,
-    CfgMfrInfo->OemId[0],
-    CfgMfrInfo->OemId[1],
-    CfgMfrInfo->OemId[2],
-    CfgMfrInfo->OemId[3],
-    CfgMfrInfo->OemId[4],
-    CfgMfrInfo->OemId[5]
+    CfgMgrInfo->Revision,
+    CfgMgrInfo->OemId[0],
+    CfgMgrInfo->OemId[1],
+    CfgMgrInfo->OemId[2],
+    CfgMgrInfo->OemId[3],
+    CfgMgrInfo->OemId[4],
+    CfgMgrInfo->OemId[5]
     ));
+
+  FreePool(CfgMgrInfo);
 
   Status = ProcessAcpiTables (TableFactoryProtocol, CfgMgrProtocol);
   if (EFI_ERROR (Status)) {

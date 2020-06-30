@@ -330,12 +330,10 @@ BuildDbg2Table (
   }
 
   Status = AddAcpiHeader (
-             CfgMgrProtocol,
-             This,
-             (EFI_ACPI_DESCRIPTION_HEADER*)&AcpiDbg2,
-             AcpiTableInfo,
-             sizeof (DBG2_TABLE)
-             );
+    This,
+    (EFI_ACPI_DESCRIPTION_HEADER *)&AcpiDbg2,
+    AcpiTableInfo,
+    sizeof (DBG2_TABLE));
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
