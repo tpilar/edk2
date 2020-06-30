@@ -1,0 +1,195 @@
+#/** @file
+#
+# Code Style Configuration specification for editors.
+#
+# References:
+#     http://editorconfig.org/
+#     https://blogs.msdn.microsoft.com/dotnet/2016/12/15/code-style-configuration-in-the-vs2017-rc-update/
+#
+#  Copyright (c) 2016, ARM Limited. All rights reserved.
+#
+#  This program and the accompanying materials
+#  are licensed and made available under the terms and conditions of the BSD License
+#  which accompanies this distribution.  The full text of the license may be found at
+#  http://opensource.org/licenses/bsd-license.php
+#
+#  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+#
+#**/
+
+# EDK2 Coding style spec for editors.
+
+# EDK2 REFERENCES:
+# [BS]    EDK II Build Specification   January 2016  Revision 1.26
+# [CCS]   EDK II C Coding Standards Specification  Version 2.1    30 October 2015
+# [PEP8]  http://www.python.org/dev/peps/pep-0008
+# [UNI]   Multi-String .UNI File Format Specification   March 2016  Revision 1.3
+# [WP]    https://github.com/tianocore/tianocore.github.io/wiki/Code-Style-Python
+
+root = true
+
+
+[*.{c,h,asl,aslc,asm,BAT}]
+
+# [CCS] 3.3 Files: General Rules
+#     ? Files may only contain the ASCII characters 0x0A, 0x0D, and 0x20 through 0x7E, inclusive. See "General Rules".
+# [CCS] 5.1.3 Files may only contain the ASCII characters 0x0A, 0x0D, and 0x20 through 0x7E
+#       Files should be saved using either ASCII or UTF8 encoding.
+charset = utf-8
+
+# [CCS] 3.3 Files: General Rules
+#     ? All lines must end with CRLF (Carriage Return Line Feed); 0x0D followed by 0x0A.
+# [CCS] 5.1.6 Only use CRLF (Carriage Return Line Feed) line endings.
+#       Use Windows, or MSDOS, style line endings. Do NOT use Unix / Linux / MacOS / OS-X file formats.
+end_of_line = crlf
+
+# [CCS] 3.3 Files: General Rules
+#           ? All indentation (tabs) is two spaces. See "General Rules?.
+indent_size = 2
+
+# [CCS] 3.2.1 Formatting: General Rules
+#       ? Tab characters are not allowed. See "General Rules?.
+# [CCS] 3.3 Files: General Rules
+#     ? Do not use tabs, only use Spaces. "General Rules".
+indent_style = space
+
+# [CCS] 5.1.7 All files must end with CRLF
+#       The last two characters in any source file within EDK II must be a CRLF: 0x0D followed by 0x0A.
+insert_final_newline = true
+
+# [CCS] 5.1.1 Lines shall be 120 columns, or less
+#       Preferably, limit line lengths to 80 columns or less.
+#      When this doesn?t leave sufficient space for a good postfix style comment,
+#      extend the line to a total of 120 columns. Having some level of uniformity 
+#      in the expected width of the source is useful for viewing and printing the code.
+max_line_length = 120
+
+# [CCS] 3.3 Files: General Rules
+#           ? All indentation (tabs) is two spaces. See "General Rules?.
+tab_width = 2
+
+# Trailing whitespace is not mentioned in the coding spec
+# However, PatchCheck.py rejects it.
+trim_trailing_whitespace = true
+
+
+[*.s]
+
+# [BS] 4.1 EDK II Build System.
+#      "All ASCII source files (see Table 14) in the EDK II code base must use the DOS CRLF
+#       character sequence for the end-of-line terminator except those that are strictly for
+#       GCC, such as assembly files that are only to be processed by *NIX tools that use an
+#       extension of ".s" (lower case)."
+end_of_line = lf
+
+
+[*.sh]
+
+# [BS] 4.1 EDK II Build System.
+#      "The *NIX shell scripts identified by an extension of .sh as well as the scripts in
+#       BaseTools/BinWrappers/PosixLike and the BaseTools/Bin/CYGWIN_NT-5.1-i686
+#       directories must always use the Linux LF character for the end-of-line terminator."
+end_of_line = lf
+
+
+[*.py]
+
+# Python style from [WP] just references [PEP8]
+
+# [PEP8] "Code in the core Python distribution should always use UTF-8."
+charset = utf-8
+
+# [BS] 4.1 EDK II Build System.
+#      "The Base Tools ASCII source files (C and Python) must use the DOS CRLF character
+#       sequence for the end-of-line terminator"
+end_of_line = crlf
+
+# [PEP8] "Use 4 spaces per indentation level."
+indent_size = 4
+
+# [PEP8] "Spaces are the preferred indentation method"
+indent_style = space
+
+# [PEP8] "."
+insert_final_newline = true
+
+# [PEP8] "Limit all lines to a maximum of 79 characters."
+max_line_length = 79
+
+# [PEP8] "Use 4 spaces per indentation level."
+tab_width = 4
+
+# [PEP8] "Avoid trailing whitespace anywhere."
+trim_trailing_whitespace = true
+
+
+[*.{dec,dsc,fdf,inf}]
+
+# [BS] 4.1 EDK II Build System.
+charset = utf-8
+
+# [BS] 4.1 EDK II Build System.
+#      "The Base Tools ASCII source files (C and Python) must use the DOS CRLF character
+#       sequence for the end-of-line terminator"
+end_of_line = crlf
+
+indent_size = 2
+
+indent_style = space
+
+insert_final_newline = true
+
+max_line_length = 120
+
+tab_width = 2
+
+trim_trailing_whitespace = true
+
+
+[{Makefile,GNUMakefile}]
+
+charset = utf-8
+
+# [BS] 4.1 EDK II Build System.
+#      "The Base Tools ASCII source files (C and Python) must use the DOS CRLF character
+#       sequence for the end-of-line terminator"
+end_of_line = crlf
+
+indent_size = 2
+
+indent_style = tab
+
+insert_final_newline = true
+
+max_line_length = 120
+
+tab_width = 2
+
+trim_trailing_whitespace = true
+
+
+[*.uni]
+
+# [UNI] 2 Unicode Strings File Format
+#       "The format for storing EDK II Unicode files is UTF-16LE.
+#        The character content must be UCS-2."
+charset = utf-16le
+
+# [BS] 4.1 EDK II Build System.
+#      "The Base Tools ASCII source files (C and Python) must use the DOS CRLF character
+#       sequence for the end-of-line terminator"
+end_of_line = crlf
+
+indent_size = 2
+
+indent_style = space
+
+insert_final_newline = true
+
+max_line_length = 120
+
+tab_width = 2
+
+trim_trailing_whitespace = true
+
