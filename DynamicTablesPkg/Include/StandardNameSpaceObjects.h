@@ -15,6 +15,7 @@
 
 #include <AcpiTableGenerator.h>
 #include <SmbiosTableGenerator.h>
+#include <ConfigurationManagerNamespace.h>
 
 #pragma pack(1)
 
@@ -44,9 +45,9 @@ typedef UINTN   CM_OBJECT_TOKEN;
     in the Standard Namespace.
 */
 typedef enum StdObjectID {
-  EStdObjCfgMgrInfo = 0x00000000, ///< 0 - Configuration Manager Info
-  EStdObjAcpiTableList,           ///< 1 - ACPI table Info List
-  EStdObjSmbiosTableList,         ///< 2 - SMBIOS table Info List
+  EStdObjCfgMgrInfo = EObjNameSpaceStandard, ///< 0 - Configuration Manager Info, namespace starts at 0
+  EStdObjAcpiTableList,                      ///< 1 - ACPI table Info List
+  EStdObjSmbiosTableList,                    ///< 2 - SMBIOS table Info List
   EStdObjMax
 } ESTD_OBJECT_ID;
 

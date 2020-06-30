@@ -14,6 +14,7 @@
 #define ARM_NAMESPACE_OBJECTS_H_
 
 #include <StandardNameSpaceObjects.h>
+#include <ConfigurationManagerNameSpace.h>
 
 #pragma pack(1)
 
@@ -21,7 +22,7 @@
     in the ARM Namespace
 */
 typedef enum ArmObjectID {
-  EArmObjReserved,                     ///<  0 - Reserved
+  EArmObjReserved = EObjNameSpaceArm,  ///<  0 - Reserved, namespace starts at 0x10000000
   EArmObjBootArchInfo,                 ///<  1 - Boot Architecture Info
   EArmObjCpuInfo,                      ///<  2 - CPU Info
   EArmObjPowerManagementProfileInfo,   ///<  3 - Power Management Profile Info
