@@ -17,12 +17,14 @@
 #include "AcpiViewLog.h"
 #include "PpttParser.h"
 #include "AcpiViewLog.h"
+#include "AcpiCrossValidator.h"
 
 // Local variables
 STATIC CONST UINT8*  ProcessorTopologyStructureType;
 STATIC CONST UINT8*  ProcessorTopologyStructureLength;
 STATIC CONST UINT32* NumberOfPrivateResources;
 STATIC ACPI_DESCRIPTION_HEADER_INFO AcpiHdrInfo;
+STATIC LIST_ENTRY mRefList;
 
 /**
   Handler for each Processor Topology Structure
@@ -142,6 +144,119 @@ ValidateCacheAttributes (
 }
 
 /**
+  This function validates the following PPTT table fields:
+  - 'Parent' (Type 0)
+  - 'Next Level of Cache' (Type 1)
+
+  Check if the reference made is to a valid processor topology structure and
+  that the link between the two types of PPTT structures is allowed by the
+  ACPI specification.
+
+  Also, check if by following the chain of references we enter an infinite loop.
+
+  @param [in] Ptr       Pointer to the start of the field data.
+  @param [in] Context   Pointer to context specific information e.g. this
+                        could be a pointer to the ACPI table header.
+**/
+STATIC
+VOID
+EFIAPI
+ValidateReference (
+  IN UINT8* Ptr,
+  IN VOID*  Context
+  )
+{
+  UINT32                                  Reference;
+  EFI_ACPI_6_3_PPTT_STRUCTURE_PROCESSOR * StructFound;
+  UINTN                                   RefCount;
+  UINT32                                  StructsVisited;
+  LIST_ENTRY                              *Entry;
+  ACPI_CROSS_ENTRY                        *Found;
+
+  Reference = *(UINT32*)Ptr;
+
+  if (Reference == 0) {
+    return;
+  }
+
+  Entry = GetFirstNode(&mRefList);
+  while (Entry != &mRefList) {
+    Found = (ACPI_CROSS_ENTRY*)Entry;
+    if (Found->Offset == Reference) {
+      break;
+    }
+    Entry = GetNextNode(&mRefList, Entry);
+  }
+
+  if (Entry == &mRefList) {
+    AcpiError (
+      ACPI_ERROR_CROSS,
+      L"Referenced offset 0x%x does contain a structure",
+      Reference);
+  }
+
+  // Processor Hierarchy Node and Cache Structure share the same header.
+  // This is why the following type cast is allowed.
+  StructFound = Found->Buffer;
+
+  if (StructFound->Type != *ProcessorTopologyStructureType) {
+    AcpiError (
+      ACPI_ERROR_CROSS,
+      L"type %d structure can't reference type %d structure",
+      *ProcessorTopologyStructureType,
+      StructFound->Type
+      );
+    return;
+  }
+
+  // If a Type 0 structure being referenced is a 'leaf' node, referencing it is
+  // not allowed.
+  if ((StructFound->Type == EFI_ACPI_6_3_PPTT_TYPE_PROCESSOR) &&
+      (StructFound->Flags.NodeIsALeaf == 1)) {
+    AcpiError (
+      ACPI_ERROR_CROSS,
+      L"May not reference a 'leaf' Processor Hierarchy Node."
+      );
+    return;
+  }
+
+  RefCount = 0;
+  Entry = GetFirstNode(&mRefList);
+  while (Entry != &mRefList) {
+    RefCount++;
+    Entry = GetNextNode(&mRefList, Entry);
+  }
+
+  // Cycle detection works by following the 'Parent'/'Next Level of Cache'
+  // reference until the we have reached a node which does not reference any
+  // other. If we have made a number of jumps which is equal to the total number
+  // of indexed PPTT structures, then we must be in a cycle.
+  for (StructsVisited = 0; StructsVisited < RefCount; StructsVisited++) {
+    Entry = GetFirstNode(&mRefList);
+    while (Entry != &mRefList) {
+      Found = (ACPI_CROSS_ENTRY *)Entry;
+
+      // The following comparison works because 'Parent' and 'Next Level of Cache'
+      // are both 4-byte fields at offset 8 in the respective PPTT structure types
+      // they belong to.
+      if (Found->Offset == StructFound->Parent) {
+        break;
+      }
+      Entry = GetNextNode(&mRefList, Entry);
+    }
+
+    // The current item does not reference anything else - we are good
+    if (Entry == &mRefList) {
+      return;
+    }
+
+    StructFound = Found->Buffer;
+  }
+
+  AcpiError (ACPI_ERROR_CROSS, L"Reference loop detected");
+}
+
+/**
   An ACPI_PARSER array describing the ACPI PPTT Table.
 **/
 STATIC CONST ACPI_PARSER PpttParser[] = {
@@ -168,7 +283,7 @@ STATIC CONST ACPI_PARSER ProcessorHierarchyNodeStructureParser[] = {
   {L"Reserved", 2, 2, L"0x%x", NULL, NULL, NULL, NULL},
 
   {L"Flags", 4, 4, L"0x%x", NULL, NULL, NULL, NULL},
-  {L"Parent", 4, 8, L"0x%x", NULL, NULL, NULL, NULL},
+  {L"Parent", 4, 8, L"0x%x", NULL, NULL, ValidateReference, NULL},
   {L"ACPI Processor ID", 4, 12, L"0x%x", NULL, NULL, NULL, NULL},
   {L"Number of private resources", 4, 16, L"%d", NULL,
    (VOID**)&NumberOfPrivateResources, NULL, NULL}
@@ -183,7 +298,7 @@ STATIC CONST ACPI_PARSER CacheTypeStructureParser[] = {
   {L"Reserved", 2, 2, L"0x%x", NULL, NULL, NULL, NULL},
 
   {L"Flags", 4, 4, L"0x%x", NULL, NULL, NULL, NULL},
-  {L"Next Level of Cache", 4, 8, L"0x%x", NULL, NULL, NULL, NULL},
+  {L"Next Level of Cache", 4, 8, L"0x%x", NULL, NULL, ValidateReference, NULL},
   {L"Size", 4, 12, L"0x%x", NULL, NULL, NULL, NULL},
   {L"Number of sets", 4, 16, L"%d", NULL, NULL, ValidateCacheNumberOfSets, NULL},
   {L"Associativity", 1, 20, L"%d", NULL, NULL, ValidateCacheAssociativity, NULL},
@@ -208,6 +323,59 @@ STATIC CONST ACPI_PARSER IdStructureParser[] = {
 };
 
 /**
+  This function validates the Processor Hierarchy Node (Type 0) 'Private
+  resources[N]' field.
+
+  Check if the private resource belonging to the given Processor Hierarchy Node
+  exists and is not of Type 0.
+
+  @param [in] PrivResource    Offset of the private resource from the start of
+                              the table.
+**/
+STATIC
+VOID
+EFIAPI
+ValidatePrivateResource (
+  IN UINT32     PrivResource
+  )
+{
+  LIST_ENTRY       *Entry;
+  ACPI_CROSS_ENTRY *Found;
+  EFI_ACPI_6_3_PPTT_STRUCTURE_HEADER  *StructFound;
+
+  Entry = GetFirstNode(&mRefList);
+  while (Entry != &mRefList) {
+    Found = (ACPI_CROSS_ENTRY *) Entry;
+    if (Found->Offset == PrivResource) {
+      break;
+    }
+    Entry = GetNextNode(&mRefList, Entry);
+  }
+
+  if (Entry == &mRefList) {
+    AcpiError (
+      ACPI_ERROR_CROSS,
+      L"PPTT structure (offset=0x%x) does not exist.",
+      PrivResource);
+      return ;
+  }
+
+  StructFound = Found->Buffer;
+
+  if ((StructFound->Type != EFI_ACPI_6_3_PPTT_TYPE_CACHE) &&
+      (StructFound->Type != EFI_ACPI_6_3_PPTT_TYPE_ID)) {
+    AcpiError (
+      ACPI_ERROR_CROSS,
+      L"Private resource (offset=0x%x) has bad type=%d (expected %d or %d)",
+      PrivResource,
+      StructFound->Type,
+      EFI_ACPI_6_3_PPTT_TYPE_CACHE,
+      EFI_ACPI_6_3_PPTT_TYPE_ID
+      );
+  }
+}
+
+/**
   This function parses the Processor Hierarchy Node Structure (Type 0).
 
   @param [in] Ptr     Pointer to the start of the Processor Hierarchy Node
@@ -223,6 +391,7 @@ DumpProcessorHierarchyNodeStructure (
 {
   UINT32 Offset;
   UINT32 Index;
+  UINT32 *PrivResource;
 
   Offset = ParseAcpi (
     TRUE,
@@ -245,9 +414,14 @@ DumpProcessorHierarchyNodeStructure (
     if (AssertMemberIntegrity (Offset, sizeof (UINT32), Ptr, Length)) {
       return;
     }
+    PrivResource = (UINT32 *) (Ptr + Offset);
 
     PrintFieldName (4, L"Private resources [%d]", Index);
-    AcpiInfo (L"0x%x", *(UINT32 *) (Ptr + Offset));
+    AcpiInfo (L"0x%x", *PrivResource);
+
+    if (mConfig.ConsistencyCheck) {
+      ValidatePrivateResource(*PrivResource);
+    }
 
     Offset += sizeof (UINT32);
   }
@@ -319,15 +493,11 @@ ParseAcpiPptt (
   }
 
   ResetAcpiStructCounts (&PpttDatabase);
+  InitializeListHead(&mRefList);
 
+  // Run a first loop and do fatal checks and populate RefList
   Offset = ParseAcpi (
-             TRUE,
-             0,
-             "PPTT",
-             Ptr,
-             AcpiTableLength,
-             PARSER_PARAMS (PpttParser)
-             );
+    FALSE, 0, "PPTT", Ptr, AcpiTableLength, PARSER_PARAMS (PpttParser));
 
   while (Offset < AcpiTableLength) {
     // Parse Processor Hierarchy Node Structure to obtain Type and Length.
@@ -345,14 +515,40 @@ ParseAcpiPptt (
     if ((ProcessorTopologyStructureType == NULL) ||
         (ProcessorTopologyStructureLength == NULL)) {
       AcpiError (ACPI_ERROR_PARSE, L"Failed to parse processor topology");
-      return;
+      goto EXIT;
     }
 
     // Validate Processor Topology Structure length
     if (AssertMemberIntegrity (
           Offset, *ProcessorTopologyStructureLength, Ptr, AcpiTableLength)) {
-      return;
+      goto EXIT;
     }
+
+    AcpiCrossValidatorAdd (
+      &mRefList,
+      Ptr + Offset,
+      *ProcessorTopologyStructureLength,
+      *ProcessorTopologyStructureType,
+      Offset
+      );
+
+    Offset += *ProcessorTopologyStructureLength;
+  } // while
+
+   // Do second loop and validate the rest
+  Offset = ParseAcpi (
+    TRUE, 0, "PPTT", Ptr, AcpiTableLength, PARSER_PARAMS (PpttParser));
+
+  while (Offset < AcpiTableLength) {
+    // Parse Processor Hierarchy Node Structure to obtain Type and Length.
+    ParseAcpi (
+      FALSE,
+      0,
+      NULL,
+      Ptr + Offset,
+      AcpiTableLength - Offset,
+      PARSER_PARAMS (ProcessorTopologyStructureHeaderParser)
+      );
 
     // Parse the Processor Topology Structure
     ParseAcpiStruct (
@@ -371,4 +567,7 @@ ParseAcpiPptt (
   if (mConfig.ConsistencyCheck) {
     ValidateAcpiStructCounts (&PpttDatabase);
   }
+
+EXIT:
+  AcpiCrossValidatorDelete(&mRefList);
 }
